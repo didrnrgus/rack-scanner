@@ -1,0 +1,68 @@
+name: Build iOS (unsigned ipa)
+on:
+  workflow_dispatch:   # 수동 실행만. 푸시마다 돌리지 않는다 (macOS 무료 분량 절약)
+
+# 초안 (docs/DEV_PLAN.md). 실제로 돌려 보고 맞춘다. M0 에서 검증할 것:
+#  - Unity Personal 라이선스 활성화 (secrets: UNITY_LICENSE, UNITY_EMAIL, UNITY_PASSWORD)
+#  - GameCI 출력 경로 (아래는 find 로 Unity-iPhone.xcodeproj 를 찾아 경로 차이를 흡수)
+#  - 서명 없는 .ipa 를 Sideloadly 가 받아 주는지
+
+jobs:
+  unity-export:
+    runs-on: ubuntu-latest
+    steps:
+      # TODO: iOS 모듈이 든 Unity 이미지가 커서 디스크가 모자라면 free-disk-space 단계 추가
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/cache@v4
+        with:
+          path: unity/Library
+          key: Library-iOS-${{ hashFiles('unity/Packages/manifest.json', 'unity/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-iOS-
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity
+          targetPlatform: iOS
+          buildMethod: RackScanner.EditorTools.RackScannerBuild.BuildIOS
+      # Xcode 프로젝트 안의 셸 스크립트 실행 권한을 지키려고 tar 로 묶어 올린다 (upload-artifact 는 권한을 잃음)
+      - name: Pack Xcode project
+        run: |
+          PROJ=$(find build -name Unity-iPhone.xcodeproj -maxdepth 4 | head -1)
+          test -n "$PROJ" || { echo "Unity-iPhone.xcodeproj not found under build/"; find build -maxdepth 3; exit 1; }
+          tar -czf xcode-project.tgz -C "$(dirname "$PROJ")" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcode-project
+          path: xcode-project.tgz
+          retention-days: 3
+
+  xcode-build:
+    needs: unity-export
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xcode-project
+      - name: Unpack
+        run: mkdir xcode-project && tar -xzf xcode-project.tgz -C xcode-project
+      - name: Archive without signing
+        run: |
+          cd xcode-project
+          xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Release -sdk iphoneos \
+            -archivePath ../build/app.xcarchive archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" ENABLE_BITCODE=NO
+      - name: Package ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/app.xcarchive/Products/Applications/*.app Payload/
+          zip -qr app.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-ipa
+          path: app.ipa
+          retention-days: 7

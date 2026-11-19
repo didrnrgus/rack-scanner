@@ -1,0 +1,19 @@
+name: Tests (pure C#)
+# Shared / Analysis / 네트워크 코어를 Unity 없이 검증한다. Linux 러너라 1분 안팎 (macOS 분량을 쓰지 않음).
+on:
+  push:
+    paths: ['unity/Assets/**/*.cs', 'tests/**', 'tools/AnalysisCli/**', '.github/workflows/tests.yml']
+  pull_request:
+    paths: ['unity/Assets/**/*.cs', 'tests/**', 'tools/AnalysisCli/**']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet test tests/RackScanner.Tests
+      - run: dotnet build tools/AnalysisCli

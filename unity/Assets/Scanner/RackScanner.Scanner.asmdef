@@ -1,0 +1,25 @@
+{
+    "name": "RackScanner.Scanner",
+    "rootNamespace": "RackScanner.Scanner",
+    "references": [
+        "RackScanner.Shared"
+    ],
+    "includePlatforms": [
+        "Editor",
+        "iOS"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.arfoundation",
+            "expression": "6.0.0",
+            "define": "RS_ARFOUNDATION"
+        }
+    ],
+    "noEngineReferences": false
+}

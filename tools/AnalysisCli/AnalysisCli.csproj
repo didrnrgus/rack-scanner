@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unity 프로젝트의 순수 C# 코드(Shared, Analysis)를 그대로 컴파일해 CLI 로 돌린다. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RootNamespace>RackScanner.Tools</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="../../unity/Assets/Shared/**/*.cs" LinkBase="Shared" />
+    <Compile Include="../../unity/Assets/Analysis/**/*.cs" LinkBase="Analysis" />
+  </ItemGroup>
+</Project>

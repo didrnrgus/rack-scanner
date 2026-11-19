@@ -1,0 +1,19 @@
+{
+    "name": "RackScanner.Receiver",
+    "rootNamespace": "RackScanner.Receiver",
+    "references": [
+        "RackScanner.Shared",
+        "RackScanner.Analysis"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [
+        "iOS"
+    ],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

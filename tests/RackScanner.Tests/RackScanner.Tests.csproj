@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Unity 없이 순수 C# 코드를 검증한다. Unity 6 의 C# 9 제한을 지키는지도 LangVersion 9 로 같이 검사한다.
+    UnityEngine 을 쓰는 파일(Scanner/AR, Receiver/View, *App.cs, Editor)은 포함하지 않는다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.6.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="../../tools/AnalysisCli/SyntheticScene.cs" Link="SyntheticScene.cs" />
+    <Compile Include="../../unity/Assets/Shared/**/*.cs" LinkBase="Shared" />
+    <Compile Include="../../unity/Assets/Analysis/**/*.cs" LinkBase="Analysis" />
+    <Compile Include="../../unity/Assets/Scanner/Net/**/*.cs" LinkBase="Scanner/Net" />
+    <Compile Include="../../unity/Assets/Scanner/Storage/**/*.cs" LinkBase="Scanner/Storage" />
+    <Compile Include="../../unity/Assets/Receiver/Net/**/*.cs" LinkBase="Receiver/Net" />
+    <Compile Include="../../unity/Assets/Receiver/Session/**/*.cs" LinkBase="Receiver/Session" />
+  </ItemGroup>
+</Project>
