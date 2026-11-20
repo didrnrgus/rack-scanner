@@ -104,8 +104,14 @@ namespace RackScanner.Scanner
             {
                 OcclusionManager.requestedEnvironmentDepthMode = UnityEngine.XR.ARSubsystems.EnvironmentDepthMode.Best;
                 OcclusionManager.environmentDepthTemporalSmoothingRequested = true;
+                // 깊이 이미지는 점 수집용으로만 쓴다. 화면 가림(occlusion)을 켜 두면 카메라 배경이 LiDAR 깊이를 깊이 버퍼에 써서,
+                // 실제 표면과 같은 자리에 있는 메쉬 오버레이가 거친 깊이(256×192)와 겹쳐 얼룩덜룩 가려진다. CPU 깊이 이미지는 그대로 받는다.
+                OcclusionManager.requestedOcclusionPreferenceMode = UnityEngine.XR.ARSubsystems.OcclusionPreferenceMode.NoOcclusion;
             }
             _camTransform = CameraManager != null ? CameraManager.transform : Camera.main.transform;
+            // 카메라 화면을 끄면 ARCameraBackground 가 투영 행렬을 Unity 기본값으로 되돌린다.
+            // 그때도 메쉬 오버레이가 실제 카메라 화각으로 그려지도록 ARKit 투영 행렬을 직접 넣는다.
+            if (CameraManager != null) CameraManager.frameReceived += OnCameraFrame;
 
             PcHost = PlayerPrefs.GetString("pcHost", PcHost);
             MarkerPrintedWidth = PlayerPrefs.GetFloat("markerWidth", MarkerPrintedWidth);
@@ -142,6 +148,14 @@ namespace RackScanner.Scanner
             Store?.Dispose();
             Depth?.Dispose();
             Meshes?.Dispose();
+            if (CameraManager != null) CameraManager.frameReceived -= OnCameraFrame;
+        }
+
+        void OnCameraFrame(ARCameraFrameEventArgs args)
+        {
+            if (ShowCameraFeed || !args.projectionMatrix.HasValue) return; // 켜져 있으면 ARCameraBackground 가 넣는다
+            var cam = CameraManager.GetComponent<Camera>();
+            if (cam != null) cam.projectionMatrix = args.projectionMatrix.Value;
         }
 
         internal MarkerDefinition BuildMarkerDefinition() => new MarkerDefinition

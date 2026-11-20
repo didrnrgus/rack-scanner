@@ -10,7 +10,8 @@ Shader "RackScanner/MeshOverlay"
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
-            ZWrite Off
+            // 깊이를 써서 가까운 면이 뒤의 면을 가리게 한다 (벽 너머·선반 뒤 메쉬가 겹겹이 비쳐 보이지 않게)
+            ZWrite On
             Cull Off
             CGPROGRAM
             #pragma vertex vert
