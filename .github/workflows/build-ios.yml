@@ -36,10 +36,25 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      ready: ${{ steps.ready.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # 태그를 읽으려고
+      # Unity 프로젝트를 에디터로 한 번 열어 커밋하기 전에는(docs/build-and-install.md 1~2단계) 빌드를 건너뛴다.
+      # 실패로 두면 그때까지 main 푸시마다 빨간 X 가 뜨므로 경고만 남긴다.
+      - id: ready
+        run: |
+          MISSING=""
+          for f in unity/ProjectSettings/ProjectVersion.txt unity/Packages/manifest.json unity/Assets/Scanner/Scenes/Scanner.unity; do
+            [ -f "$f" ] || MISSING="$MISSING $f"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning title=iOS 빌드 건너뜀::Unity 프로젝트가 아직 준비되지 않았습니다. 없는 파일:$MISSING (docs/build-and-install.md 참고)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
       - id: v
         env:
           BUMP: ${{ inputs.bump || 'patch' }}
@@ -60,8 +75,21 @@ jobs:
 
   unity-export:
     needs: version
+    if: needs.version.outputs.ready == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Check Unity secrets
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          MISSING=""
+          for n in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD; do [ -n "${!n}" ] || MISSING="$MISSING $n"; done
+          if [ -n "$MISSING" ]; then
+            echo "::error title=Unity 시크릿 없음::레포 Settings → Secrets and variables → Actions 에 등록하세요:$MISSING"
+            exit 1
+          fi
       # TODO: iOS 모듈이 든 Unity 이미지가 커서 디스크가 모자라면 free-disk-space 단계 추가
       - uses: actions/checkout@v4
         with:
