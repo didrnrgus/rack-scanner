@@ -38,6 +38,8 @@ namespace RackScanner.Scanner
             string net = s == null ? "미연결" : s.IsConnected ? $"연결됨 (ACK {s.AckedCount}, 대기 {s.PendingCount})" : $"연결 시도 중… {s.LastError}";
             GUILayout.Label($"PC: {C(s != null && s.IsConnected)}{net}</color>", rich);
             GUILayout.Label($"상태: {_app.State} · 점 {_app.TotalPoints:N0} · {_app.Fps:F0}fps · 프레임 {_app.FrameCount}");
+            if (_app.MeshCapture && _app.Meshes != null)
+                GUILayout.Label($"메쉬: 블록 {_app.MeshBlockCount} · 삼각형 {_app.MeshTriangleCount:N0} (ARKit {_app.Meshes.BlockCount}){(s != null ? $" · PC 대기 {s.MeshPendingCount}" : "")}");
             if (_app.SessionId != null) GUILayout.Label($"세션: {_app.SessionId}");
             if (!string.IsNullOrEmpty(_app.Message)) GUILayout.Label(_app.Message, rich);
             if (!string.IsNullOrEmpty(_app.MarkerSizer.Status)) GUILayout.Label(_app.MarkerSizer.Status);
@@ -80,11 +82,18 @@ namespace RackScanner.Scanner
             if (GUILayout.Button("촬영완료", GUILayout.Height(44))) _app.CompleteScan();
             GUILayout.EndHorizontal();
             GUI.enabled = true;
+            GUILayout.EndArea();
 
+            // 오른쪽 열: 수집·표시 설정과 저장된 세션 (왼쪽 열이 화면 높이를 넘지 않게 나눔)
+            GUILayout.BeginArea(new Rect(440, 10, 420, 700), GUI.skin.box);
             GUI.enabled = _app.State != ScannerApp.Phase.Scanning && _app.State != ScannerApp.Phase.Paused;
             if (GUILayout.Button(_app.RawMode ? "원본 모드: 켬 (가공 없음·컬러 없음·1초 1프레임)" : "원본 모드: 끔 (복셀·필터·컬러)", GUILayout.Height(40)))
                 _app.SetRawMode(!_app.RawMode);
+            if (GUILayout.Button(_app.MeshCapture ? "메쉬 수집: 켬 (LiDAR 메쉬도 PC로)" : "메쉬 수집: 끔 (점군만)", GUILayout.Height(40)))
+                _app.SetMeshCapture(!_app.MeshCapture);
             GUI.enabled = true;
+            if (_app.MeshCapture && GUILayout.Button(_app.MeshOverlay ? "메쉬 겹쳐 보기: 켬" : "메쉬 겹쳐 보기: 끔", GUILayout.Height(40)))
+                _app.SetMeshOverlay(!_app.MeshOverlay);
             if (GUILayout.Button(_app.ShowCameraFeed ? "카메라 화면: 켬" : "카메라 화면: 끔 (검은 화면, 배터리 절약)", GUILayout.Height(40)))
                 _app.SetCameraFeed(!_app.ShowCameraFeed);
             if (GUILayout.Button($"깊이 축: {_app.Depth.Axes} (기기 확인용)")) _app.Depth.Axes = (DepthAxes)(((int)_app.Depth.Axes + 1) % 4);

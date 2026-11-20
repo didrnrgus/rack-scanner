@@ -7,7 +7,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [docs/DEV_PLAN.md](docs/DEV_PLAN.md) | 개발 문서 (확정된 결정, 구조, 마일스톤) |
-| [docs/protocol.md](docs/protocol.md) | 전송 프로토콜 명세 (v1) |
+| [docs/protocol.md](docs/protocol.md) | 전송 프로토콜 명세 (v2: LiDAR 메쉬 블록 추가) |
 | [docs/build-and-install.md](docs/build-and-install.md) | Unity 세팅, 씬, iOS 빌드(맥북 / GitHub Actions) → Sideloadly 설치 |
 | [docs/analysis.md](docs/analysis.md) | 랙 분석 파이프라인 구현 메모, 결과 형식, 현재 정확도 |
 
@@ -35,4 +35,6 @@ dotnet run --project tools/AnalysisCli -- --synthetic /tmp/rack.ply --bays 4 --l
 
 ```bash
 dotnet run --project tools/AnalysisCli -- /tmp/rack.ply --bay-width 1.2 --level-pitch 0.6 --depth 0.6
+# 저장된 세션의 LiDAR 메쉬를 적응형 단순화 (넓은 면은 크게, 복잡한 곳은 원래대로) → mesh.obj
+dotnet run --project tools/AnalysisCli -- --mesh sessions/<세션> --error-mm 5
 ```

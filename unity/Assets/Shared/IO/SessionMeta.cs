@@ -23,12 +23,21 @@ namespace RackScanner.Shared.IO
         public RigidTransform FinalTransform = RigidTransform.Identity;
         public int TotalChunks;
         public int PointCount;
+        /// <summary>ARKit 메쉬 블록 수와 합친 원본 메쉬의 삼각형 수 (메쉬 수집을 껐으면 0).</summary>
+        public int MeshBlockCount;
+        public int MeshTriangleCount;
 
         public const string FileName = "session.json";
         public const string PointsFileName = "points.ply";
         public const string ChunksFileName = "chunks.bin";
         public const string AlignmentLogFileName = "alignment_log.csv";
         public const string ResultFileName = "result.json";
+        /// <summary>메쉬 블록 원본: MESH_BLOCK 프레임을 이어 쓴 파일 (아이패드, 블록마다 마지막 판이 유효).</summary>
+        public const string MeshFramesFileName = "mesh.bin";
+        /// <summary>ARKit 메쉬 블록을 합친 원본 (OBJ, 마커 좌표).</summary>
+        public const string MeshRawFileName = "mesh_raw.obj";
+        /// <summary>적응형 단순화한 메쉬 (OBJ, 마커 좌표). 넓은 면은 큰 삼각형, 복잡한 곳은 원래 밀도.</summary>
+        public const string MeshFileName = "mesh.obj";
 
         public string ToJson()
         {
@@ -40,7 +49,9 @@ namespace RackScanner.Shared.IO
                 .Prop("createdUtc", CreatedUtc)
                 .Prop("usedMarkerId", UsedMarkerId)
                 .Prop("totalChunks", TotalChunks)
-                .Prop("pointCount", PointCount);
+                .Prop("pointCount", PointCount)
+                .Prop("meshBlockCount", MeshBlockCount)
+                .Prop("meshTriangleCount", MeshTriangleCount);
             w.Key("marker").BeginObject()
                 .Prop("id", Marker.Id)
                 .Prop("printedWidth", Marker.PrintedWidth)
@@ -69,6 +80,8 @@ namespace RackScanner.Shared.IO
                 UsedMarkerId = d.GetString("usedMarkerId", ""),
                 TotalChunks = (int)d.GetNumber("totalChunks", 0),
                 PointCount = (int)d.GetNumber("pointCount", 0),
+                MeshBlockCount = (int)d.GetNumber("meshBlockCount", 0),
+                MeshTriangleCount = (int)d.GetNumber("meshTriangleCount", 0),
             };
             var mk = d.GetObject("marker");
             if (mk != null)

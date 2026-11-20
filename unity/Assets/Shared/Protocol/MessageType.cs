@@ -10,6 +10,8 @@ namespace RackScanner.Shared.Protocol
         Ack = 5,        // PC → iPad
         State = 6,      // 양방향
         EndScan = 7,    // iPad → PC
+        MeshBlock = 8,  // iPad → PC (v2)
+        MeshAck = 9,    // PC → iPad (v2)
     }
 
     /// <summary>STATE 메시지의 상태 코드.</summary>

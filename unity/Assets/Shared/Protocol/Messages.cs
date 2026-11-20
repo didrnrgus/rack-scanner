@@ -167,4 +167,68 @@ namespace RackScanner.Shared.Protocol
         public void Write(PayloadWriter w) { w.WriteU32(TotalChunks); }
         public static EndScanMessage Read(ref PayloadReader r) => new EndScanMessage { TotalChunks = r.ReadU32() };
     }
+
+    /// <summary>
+    /// MESH_BLOCK (iPad → PC, v2): ARKit 장면 재구성 메쉬 한 블록의 최신 상태.
+    /// 블록은 ARKit 메쉬 앵커 하나에 대응하고, 스캔 중 계속 갱신된다. 같은 블록은 revision 이 큰 것이 이긴다.
+    /// 정점은 마커 기준 Unity 좌표 (미터), 인덱스는 삼각형 목록 (Unity 앞면 = 시계 방향). 정점 0개 = 블록 삭제.
+    /// </summary>
+    public sealed class MeshBlockMessage : IMessage
+    {
+        public MessageType Type => MessageType.MeshBlock;
+        public uint BlockId;
+        /// <summary>블록마다 1부터 커지는 판 번호. PC 는 가진 것보다 큰 판만 반영한다.</summary>
+        public uint Revision;
+        /// <summary>스캔 시작 후 초.</summary>
+        public double Time;
+        public Vector3[] Vertices = Array.Empty<Vector3>();
+        public int[] Indices = Array.Empty<int>();
+
+        public bool IsRemoval => Vertices.Length == 0;
+        public int TriangleCount => Indices.Length / 3;
+
+        public void Write(PayloadWriter w)
+        {
+            w.WriteU32(BlockId);
+            w.WriteU32(Revision);
+            w.WriteF64(Time);
+            w.WriteU32((uint)Vertices.Length);
+            for (int i = 0; i < Vertices.Length; i++) w.WriteVector3(Vertices[i]);
+            w.WriteU32((uint)Indices.Length);
+            for (int i = 0; i < Indices.Length; i++) w.WriteU32((uint)Indices[i]);
+        }
+
+        public static MeshBlockMessage Read(ref PayloadReader r)
+        {
+            var m = new MeshBlockMessage { BlockId = r.ReadU32(), Revision = r.ReadU32(), Time = r.ReadF64() };
+            uint vc = r.ReadU32();
+            if ((long)vc * ProtocolConstants.BytesPerMeshVertex > r.Remaining) throw new ProtocolException($"vertex count {vc} exceeds payload");
+            var v = new Vector3[vc];
+            for (int i = 0; i < v.Length; i++) v[i] = r.ReadVector3();
+            uint ic = r.ReadU32();
+            if ((long)ic * 4 > r.Remaining) throw new ProtocolException($"index count {ic} exceeds payload");
+            if (ic % 3 != 0) throw new ProtocolException($"index count {ic} is not a multiple of 3");
+            var idx = new int[ic];
+            for (int i = 0; i < idx.Length; i++)
+            {
+                uint k = r.ReadU32();
+                if (k >= vc) throw new ProtocolException($"index {k} out of range (vertices {vc})");
+                idx[i] = (int)k;
+            }
+            m.Vertices = v;
+            m.Indices = idx;
+            return m;
+        }
+    }
+
+    /// <summary>MESH_ACK (PC → iPad, v2): 받은 메쉬 블록 번호와 판 번호.</summary>
+    public sealed class MeshAckMessage : IMessage
+    {
+        public MessageType Type => MessageType.MeshAck;
+        public uint BlockId;
+        public uint Revision;
+
+        public void Write(PayloadWriter w) { w.WriteU32(BlockId); w.WriteU32(Revision); }
+        public static MeshAckMessage Read(ref PayloadReader r) => new MeshAckMessage { BlockId = r.ReadU32(), Revision = r.ReadU32() };
+    }
 }

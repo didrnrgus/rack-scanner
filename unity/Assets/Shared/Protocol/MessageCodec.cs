@@ -18,7 +18,10 @@ namespace RackScanner.Shared.Protocol
         /// <summary>메시지를 헤더 포함 프레임 바이트로 인코딩한다.</summary>
         public static byte[] Encode(IMessage msg)
         {
-            var w = new PayloadWriter(msg is PointChunkMessage pc ? 32 + pc.Points.Length * ProtocolConstants.BytesPerPoint : 128);
+            int capacity = msg is PointChunkMessage pc ? 32 + pc.Points.Length * ProtocolConstants.BytesPerPoint
+                : msg is MeshBlockMessage mb ? 32 + mb.Vertices.Length * ProtocolConstants.BytesPerMeshVertex + mb.Indices.Length * 4
+                : 128;
+            var w = new PayloadWriter(capacity);
             msg.Write(w);
             if (w.Length > ProtocolConstants.MaxPayloadLength) throw new ProtocolException("message too large");
             var frame = new byte[ProtocolConstants.HeaderSize + w.Length];
@@ -32,6 +35,23 @@ namespace RackScanner.Shared.Protocol
         {
             if (frame.Header.Version != ProtocolConstants.Version)
                 throw new ProtocolException($"protocol version mismatch: got {frame.Header.Version}, expected {ProtocolConstants.Version}");
+            return DecodePayload(frame);
+        }
+
+        /// <summary>
+        /// 저장된 파일(chunks.bin, mesh.bin)의 프레임을 디코딩한다. <see cref="ProtocolConstants.MinStoredVersion"/> 이상이면 받아들인다
+        /// (이후 버전이 메시지를 추가만 했을 때 예전 세션을 다시 보낼 수 있게). 네트워크에서는 <see cref="Decode"/> 를 쓴다.
+        /// </summary>
+        public static IMessage DecodeStored(in Frame frame)
+        {
+            var v = frame.Header.Version;
+            if (v < ProtocolConstants.MinStoredVersion || v > ProtocolConstants.Version)
+                throw new ProtocolException($"stored frame version {v} not readable (supported {ProtocolConstants.MinStoredVersion}..{ProtocolConstants.Version})");
+            return DecodePayload(frame);
+        }
+
+        static IMessage DecodePayload(in Frame frame)
+        {
             var r = new PayloadReader(frame.Payload);
             IMessage m;
             switch (frame.Header.Type)
@@ -43,6 +63,8 @@ namespace RackScanner.Shared.Protocol
                 case MessageType.Ack: m = AckMessage.Read(ref r); break;
                 case MessageType.State: m = StateMessage.Read(ref r); break;
                 case MessageType.EndScan: m = EndScanMessage.Read(ref r); break;
+                case MessageType.MeshBlock: m = MeshBlockMessage.Read(ref r); break;
+                case MessageType.MeshAck: m = MeshAckMessage.Read(ref r); break;
                 default: throw new ProtocolException($"unknown message type {(ushort)frame.Header.Type}");
             }
             r.EnsureEnd();

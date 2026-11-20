@@ -28,6 +28,7 @@ namespace RackScanner.Receiver.Net
     /// PC 수신 서버. (UnityEngine 비의존: 테스트에서 직접 돌린다.)
     /// - TcpListener 스레드가 받은 메시지를 큐에 넣고, 메인 스레드가 <see cref="TryDequeue"/> 로 처리한다.
     /// - POINT_CHUNK 는 받는 즉시 수신 스레드에서 ACK 를 돌려보내고, 청크 번호로 중복을 무시한다.
+    /// - MESH_BLOCK 은 받는 즉시 MESH_ACK 를 돌려보내고, 블록마다 가진 판보다 새 판만 넘긴다.
     /// - 한 번에 한 기기만 받는다. 새 연결이 오면 이전 연결을 끊는다 (와이파이 재연결 시 반쯤 죽은 소켓 정리).
     /// - HELLO 의 프로토콜 버전이 다르면 연결을 거절하고 Rejected 이벤트로 사유를 알린다.
     /// </summary>
@@ -38,6 +39,7 @@ namespace RackScanner.Receiver.Net
 
         readonly ConcurrentQueue<ServerEvent> _events = new ConcurrentQueue<ServerEvent>();
         readonly Dictionary<string, ChunkReceiptTracker> _trackers = new Dictionary<string, ChunkReceiptTracker>();
+        readonly Dictionary<string, MeshReceiptTracker> _meshTrackers = new Dictionary<string, MeshReceiptTracker>();
         TcpListener _listener;
         Thread _acceptThread;
         volatile bool _stop;
@@ -63,6 +65,16 @@ namespace RackScanner.Receiver.Net
             lock (_trackers)
             {
                 if (!_trackers.TryGetValue(sessionId, out var t)) _trackers[sessionId] = t = new ChunkReceiptTracker();
+                return t;
+            }
+        }
+
+        /// <summary>세션별 메쉬 블록 수신 기록.</summary>
+        public MeshReceiptTracker GetMeshTracker(string sessionId)
+        {
+            lock (_meshTrackers)
+            {
+                if (!_meshTrackers.TryGetValue(sessionId, out var t)) _meshTrackers[sessionId] = t = new MeshReceiptTracker();
                 return t;
             }
         }
@@ -124,6 +136,7 @@ namespace RackScanner.Receiver.Net
                 }
                 sessionId = hello.SessionId;
                 var tracker = GetTracker(sessionId);
+                var meshTracker = GetMeshTracker(sessionId);
                 _events.Enqueue(new ServerEvent { Kind = ServerEventKind.Connected, SessionId = sessionId, Remote = remote, Hello = hello });
 
                 while (!_stop)
@@ -137,6 +150,14 @@ namespace RackScanner.Receiver.Net
                         lock (c) stream.Write(ack, 0, ack.Length);
                         if (!tracker.MarkReceived(chunk.ChunkIndex)) continue;
                         _events.Enqueue(new ServerEvent { Kind = ServerEventKind.Message, SessionId = sessionId, Message = msg, RawFrame = Combine(header, frame.Payload) });
+                    }
+                    else if (msg is MeshBlockMessage block)
+                    {
+                        var ack = MessageCodec.Encode(new MeshAckMessage { BlockId = block.BlockId, Revision = block.Revision });
+                        lock (c) stream.Write(ack, 0, ack.Length);
+                        if (!meshTracker.MarkReceived(block.BlockId, block.Revision)) continue;
+                        // 메쉬 원본은 아이패드 mesh.bin 이 기준이라 chunks.bin 에는 기록하지 않는다 (RawFrame 없음)
+                        _events.Enqueue(new ServerEvent { Kind = ServerEventKind.Message, SessionId = sessionId, Message = msg });
                     }
                     else
                     {

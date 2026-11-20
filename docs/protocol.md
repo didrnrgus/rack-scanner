@@ -1,4 +1,4 @@
-# 전송 프로토콜 v1
+# 전송 프로토콜 v2
 
 아이패드 → PC TCP. 길이 접두 바이너리 메시지를 청크 단위로 보내고 청크마다 ACK 를 받는다.
 구현은 `unity/Assets/Shared/Protocol/` 한 곳뿐이고 두 앱이 공유한다. **형식을 바꾸면 `ProtocolConstants.Version` 을 올리고 이 문서를 같이 고친다.**
@@ -12,7 +12,7 @@
 | 오프셋 | 크기 | 필드 | 값 |
 | --- | --- | --- | --- |
 | 0 | 4 | magic | 바이트 `'R' 'K' 'S' 'C'` (uint32 LE 로 `0x43534B52`) |
-| 4 | 2 | version | `1` |
+| 4 | 2 | version | `2` |
 | 6 | 2 | type | 아래 표 |
 | 8 | 4 | length | 페이로드 바이트 수 (최대 16 MiB, 넘으면 연결 종료) |
 
@@ -27,25 +27,54 @@
 | 5 | ACK | PC → iPad | `u32 chunkIndex` |
 | 6 | STATE | 양방향 | `u8 state` (1 Paused, 2 Resumed, 10 TrackingNormal, 11 TrackingLimited, 12 TrackingLost) |
 | 7 | END_SCAN | iPad → PC | `u32 totalChunks` |
+| 8 | MESH_BLOCK | iPad → PC | `u32 blockId`, `u32 revision`, `f64 time(s)`, `u32 vertexCount`, `vec3` × vertexCount, `u32 indexCount`, `u32` × indexCount |
+| 9 | MESH_ACK | PC → iPad | `u32 blockId`, `u32 revision` |
 
 페이로드 뒤에 남는 바이트가 있으면 형식 불일치로 보고 연결을 끊는다.
+
+### MESH_BLOCK (v2)
+
+ARKit 장면 재구성(LiDAR 메쉬)의 블록 하나의 **최신 상태 전체**. 블록 = ARKit 메쉬 앵커 하나이며, 스캔 중 계속 갱신된다.
+
+- 정점은 마커 기준 Unity 좌표(점과 같은 좌표계), 인덱스는 삼각형 목록이고 앞면은 Unity 규칙(시계 방향)이다.
+- `revision` 은 블록마다 1부터 커진다. PC 는 가진 판보다 큰 판만 반영한다 (같거나 작은 판은 ACK 만 다시 보냄).
+- 정점 0개 = 블록 삭제. 삭제는 `revision = 0xFFFFFFFF` 로 보내 어떤 판보다도 이기게 한다.
+- `indexCount` 가 3의 배수가 아니거나 인덱스가 `vertexCount` 이상이면 형식 오류로 연결을 끊는다.
+- 아이패드는 바뀐 블록을 1초(`ScannerApp.MeshInterval`)마다 묶어 보낸다. 블록의 앵커 위치나 마커 정렬이 바뀌어도 새 판으로 다시 보낸다.
 
 ## 연결 흐름
 
 1. 아이패드가 연결하고 **HELLO** 를 먼저 보낸다. PC 는 헤더 version 과 HELLO 의 protocolVersion 을 검사해 다르면
    연결을 끊고 PC 화면에 이유를 표시한다.
-2. 연결마다 MARKER_DEF → (정렬돼 있으면) ALIGNED → ACK 안 된 POINT_CHUNK 들(번호 순) → (촬영완료 후면) END_SCAN.
+2. 연결마다 MARKER_DEF → (정렬돼 있으면) ALIGNED → ACK 안 된 POINT_CHUNK 들(번호 순)과 MESH_BLOCK 들(블록 번호 순)을 번갈아
+   → (촬영완료 후면) END_SCAN. END_SCAN 은 보낼 청크와 메쉬 블록이 모두 나간 뒤에만 보낸다.
 3. PC 는 POINT_CHUNK 를 받는 즉시 수신 스레드에서 ACK 를 보낸다. 이미 받은 번호면 누적하지 않고 ACK 만 다시 보낸다.
-4. END_SCAN 을 받고 0..totalChunks-1 이 모두 모이면 PC 가 세션 폴더에 저장한다.
+   MESH_BLOCK 도 받는 즉시 MESH_ACK 를 보내고, 옛 판이면 반영하지 않는다.
+4. END_SCAN 을 받고 0..totalChunks-1 이 모두 모이면 PC 가 세션 폴더에 저장한다 (메쉬가 있으면 `mesh_raw.obj` 도).
 
 ## 끊김과 재연결
 
 - 아이패드는 ACK 받기 전까지 청크를 메모리에 보관하고(로컬 파일에도 저장), 재연결하면 가장 작은 미확인 번호부터 다시 보낸다.
-- 보낸 청크가 있는데 5초 동안 ACK 가 없으면 연결이 죽은 것으로 보고 다시 연결한다 (와이파이가 끊기면 쓰기가 성공처럼 보이는 경우 대비).
+- 메쉬 블록은 블록마다 **마지막 판 하나만** 보관한다 (보내기 전에 새 판이 오면 옛 판은 보내지 않음). 옛 판의 MESH_ACK 로는 지우지 않는다.
+  재연결하면 ACK 안 된 블록을 모두 다시 보낸다.
+- 보낸 청크나 메쉬 블록이 있는데 5초 동안 ACK 가 없으면 연결이 죽은 것으로 보고 다시 연결한다 (와이파이가 끊기면 쓰기가 성공처럼 보이는 경우 대비).
 - PC 는 한 번에 한 기기만 받는다. 새 연결이 오면 이전 소켓을 닫는다 (재연결 시 반쯤 죽은 소켓 정리).
 - 같은 sessionId 로 다시 HELLO 하면 PC 는 같은 세션으로 이어 받는다.
 - **아이패드의 로컬 원본(`chunks.bin`)이 항상 기준**이고, 전송은 실시간 확인용이다. `chunks.bin` 은 이 프로토콜 프레임을 그대로
   이어 쓴 파일이라, 저장된 세션을 그대로 다시 보낼 수 있다 (아이패드 앱 "저장된 세션 → PC로 재전송").
+- 메쉬 블록은 같은 형식으로 `mesh.bin` 에 따로 이어 쓴다 (같은 블록의 판이 계속 쌓이므로). 읽을 때는 블록마다 마지막 판만 쓰고,
+  파일이 살아 있는 양의 3배 + 8MB 를 넘거나 촬영완료하면 마지막 판만 남겨 다시 쓴다 (임시 파일 → 바꿔치기).
+
+## 버전 기록
+
+| 버전 | 변경 |
+| --- | --- |
+| 1 | 최초 (HELLO ~ END_SCAN) |
+| 2 | MESH_BLOCK, MESH_ACK 추가. 기존 메시지 형식은 그대로 |
+
+- 네트워크 연결은 헤더·HELLO 버전이 정확히 같아야 한다 (v1 앱과 v2 앱은 연결되지 않음 → 두 앱을 같은 커밋으로 빌드).
+- 저장 파일(`chunks.bin`, `mesh.bin`)은 `ProtocolConstants.MinStoredVersion`(=1) 이상이면 읽는다 (`MessageCodec.DecodeStored`).
+  v2 는 메시지를 추가만 했으므로 v1 으로 찍어 둔 아이패드 세션도 새 앱에서 "PC로 재전송" 할 수 있다 (보낼 때는 v2 헤더로 다시 인코딩).
 
 ## TODO (프로토콜 변경이 필요해 사람 결정 대기)
 

@@ -11,7 +11,8 @@ namespace RackScanner.Scanner.Net
     /// <summary>
     /// 아이패드 → PC TCP 전송. (UnityEngine 비의존: 테스트에서 직접 돌린다.)
     /// - 청크는 ACK 를 받을 때까지 보관하고, 재연결하면 가장 작은 미확인 청크부터 다시 보낸다.
-    /// - 연결마다 HELLO → MARKER_DEF → ALIGNED → 미확인 청크 → (있으면) END_SCAN 순서로 보낸다.
+    /// - 연결마다 HELLO → MARKER_DEF → ALIGNED → 미확인 청크·메쉬 블록(번갈아) → (있으면) END_SCAN 순서로 보낸다.
+    /// - 메쉬 블록은 블록마다 최신 판만 보관하고 MESH_ACK 를 받으면 지운다. 재연결하면 남은 블록을 모두 다시 보낸다.
     /// - 미확인 청크가 있는데 AckTimeout 동안 ACK 가 없으면 연결이 죽은 것으로 보고 다시 연결한다
     ///   (와이파이가 끊기면 TCP 쓰기가 성공한 것처럼 보이는 경우가 있어서).
     /// 아이패드 로컬 원본(LocalStore)이 항상 기준이고, 이 전송은 실시간 확인용이다.
@@ -30,13 +31,16 @@ namespace RackScanner.Scanner.Net
         public bool IsConnected => _connected;
         public int PendingCount => _pending.PendingCount;
         public int AckedCount => _pending.AckedCount;
+        public int MeshPendingCount => _mesh.PendingCount;
+        public int MeshAckedCount => _mesh.AckedCount;
         public string LastError { get; private set; } = "";
         public int ConnectCount { get; private set; }
         public bool EndScanQueued => _endScanFrame != null;
-        /// <summary>END_SCAN 을 보냈고 모든 청크가 ACK 됨 = 전송 완료.</summary>
-        public bool IsTransferComplete => _endScanFrame != null && _pending.PendingCount == 0 && _endScanSentOnce;
+        /// <summary>END_SCAN 을 보냈고 모든 청크와 메쉬 블록이 ACK 됨 = 전송 완료.</summary>
+        public bool IsTransferComplete => _endScanFrame != null && _pending.PendingCount == 0 && _mesh.PendingCount == 0 && _endScanSentOnce;
 
         readonly PendingChunkStore _pending = new PendingChunkStore();
+        readonly PendingMeshStore _mesh = new PendingMeshStore();
         readonly ConcurrentQueue<byte[]> _control = new ConcurrentQueue<byte[]>();
         readonly AutoResetEvent _wake = new AutoResetEvent(false);
         readonly object _metaLock = new object();
@@ -79,6 +83,15 @@ namespace RackScanner.Scanner.Net
         public void EnqueueChunkFrame(uint index, byte[] frame)
         {
             _pending.Add(index, frame);
+            _wake.Set();
+        }
+
+        public void EnqueueMesh(MeshBlockMessage block) => EnqueueMeshFrame(block.BlockId, block.Revision, MessageCodec.Encode(block));
+
+        /// <summary>이미 인코딩된 MESH_BLOCK 프레임을 넣는다. 같은 블록의 이전 판은 (아직 안 보냈으면) 대체된다.</summary>
+        public void EnqueueMeshFrame(uint blockId, uint revision, byte[] frame)
+        {
+            _mesh.Put(blockId, revision, frame);
             _wake.Set();
         }
 
@@ -136,7 +149,7 @@ namespace RackScanner.Scanner.Net
                 if (connectTask.IsFaulted) throw connectTask.Exception.GetBaseException();
 
                 var stream = client.GetStream();
-                ConnectCount++;
+                int conn = ++ConnectCount; // 메쉬 블록의 "이 연결에서 보냈는지" 표시에 쓴다
                 LastError = "";
                 _connected = true;
                 Interlocked.Exchange(ref _lastAckTicks, DateTime.UtcNow.Ticks);
@@ -149,6 +162,7 @@ namespace RackScanner.Scanner.Net
 
                 long cursor = -1; // 이 연결에서 보낸 가장 큰 청크 번호
                 bool endSent = false;
+                bool meshTurn = false; // 청크와 메쉬 블록을 번갈아 보낸다 (한쪽이 다른 쪽을 굶기지 않게)
                 while (!_stop && _connected)
                 {
                     bool didWork = false;
@@ -163,13 +177,25 @@ namespace RackScanner.Scanner.Net
 
                     while (_control.TryDequeue(out var ctl)) { Write(stream, ctl); didWork = true; }
 
-                    if (meta == null && _pending.TryGetNextAfter(cursor, out var idx, out var frame))
+                    bool sentData = false;
+                    if (meta == null && meshTurn && _mesh.TryTakeUnsent(conn, out _, out var meshFrame))
+                    {
+                        Write(stream, meshFrame);
+                        sentData = true;
+                    }
+                    else if (meta == null && _pending.TryGetNextAfter(cursor, out var idx, out var frame))
                     {
                         Write(stream, frame);
                         cursor = idx;
-                        didWork = true;
+                        sentData = true;
                     }
-                    else if (meta == null && !endSent && _endScanFrame != null && !_pending.TryGetNextAfter(cursor, out _, out _))
+                    else if (meta == null && _mesh.TryTakeUnsent(conn, out _, out meshFrame))
+                    {
+                        Write(stream, meshFrame);
+                        sentData = true;
+                    }
+                    if (sentData) { didWork = true; meshTurn = !meshTurn; }
+                    else if (meta == null && !endSent && _endScanFrame != null && !_pending.TryGetNextAfter(cursor, out _, out _) && !_mesh.HasUnsent(conn))
                     {
                         Write(stream, _endScanFrame);
                         endSent = true;
@@ -179,7 +205,9 @@ namespace RackScanner.Scanner.Net
 
                     if (!didWork)
                     {
-                        if (_pending.PendingCount > 0 && !_pending.TryGetNextAfter(cursor, out _, out _))
+                        bool waitingAck = (_pending.PendingCount > 0 || _mesh.PendingCount > 0)
+                                          && !_pending.TryGetNextAfter(cursor, out _, out _) && !_mesh.HasUnsent(conn);
+                        if (waitingAck)
                         {
                             // 보낸 청크들의 ACK 를 기다리는 중. 너무 오래 없으면 연결을 다시 맺는다.
                             var since = DateTime.UtcNow - new DateTime(Interlocked.Read(ref _lastAckTicks), DateTimeKind.Utc);
@@ -203,6 +231,12 @@ namespace RackScanner.Scanner.Net
                     if (msg is AckMessage ack)
                     {
                         _pending.Ack(ack.ChunkIndex);
+                        Interlocked.Exchange(ref _lastAckTicks, DateTime.UtcNow.Ticks);
+                        _wake.Set();
+                    }
+                    else if (msg is MeshAckMessage mack)
+                    {
+                        _mesh.Ack(mack.BlockId, mack.Revision);
                         Interlocked.Exchange(ref _lastAckTicks, DateTime.UtcNow.Ticks);
                         _wake.Set();
                     }

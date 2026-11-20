@@ -8,6 +8,7 @@ using RackScanner.Scanner.Net;
 using RackScanner.Scanner.Storage;
 using RackScanner.Shared.Geometry;
 using RackScanner.Shared.IO;
+using RackScanner.Shared.Mesh;
 using RackScanner.Shared.Model;
 using RackScanner.Shared.Protocol;
 using UnityEngine;
@@ -52,6 +53,14 @@ namespace RackScanner.Scanner
         public int SampleEveryNFrames = 3;
         public int ChunkMaxPoints = 8000;
 
+        [Header("메쉬 (ARKit 장면 재구성)")]
+        [Tooltip("LiDAR 메쉬를 점군과 함께 모아 PC 로 보내고 로컬에도 저장한다 (mesh.bin, 촬영완료 시 mesh_raw.obj). 촬영 중에는 바꾸지 않는다")]
+        public bool MeshCapture = true;
+        [Tooltip("아이패드 화면에 메쉬를 반투명으로 겹쳐 그린다 (어디까지 찍혔는지 확인)")]
+        public bool MeshOverlay = true;
+        [Tooltip("바뀐 메쉬 블록을 몇 초마다 읽어 보낼지")]
+        public float MeshInterval = 1.0f;
+
         // 상태
         public enum Phase { Idle, Scanning, Paused, Completed }
         public Phase State { get; private set; } = Phase.Idle;
@@ -69,6 +78,12 @@ namespace RackScanner.Scanner
         internal int FrameCount { get; private set; }
         internal float Fps { get; private set; }
         internal string Message = "";
+        internal MeshCollector Meshes { get; private set; }
+        /// <summary>이 세션에서 살아 있는 메쉬 블록 (블록마다 마지막 판). mesh.bin 정리와 OBJ 쓰기에 쓴다.</summary>
+        readonly SortedDictionary<uint, MeshBlockMessage> _meshLatest = new SortedDictionary<uint, MeshBlockMessage>();
+        readonly List<MeshBlockMessage> _meshBuf = new List<MeshBlockMessage>();
+        internal int MeshBlockCount => _meshLatest.Count;
+        internal int MeshTriangleCount { get; private set; }
 
         VoxelSet _voxels;
         ChunkBuilder _chunks;
@@ -98,6 +113,10 @@ namespace RackScanner.Scanner
             VoxelSize = PlayerPrefs.GetFloat("voxelSize", VoxelSize);
             RawMode = PlayerPrefs.GetInt("rawMode", RawMode ? 1 : 0) != 0;
             ShowCameraFeed = PlayerPrefs.GetInt("showCamera", ShowCameraFeed ? 1 : 0) != 0;
+            MeshCapture = PlayerPrefs.GetInt("meshCapture", MeshCapture ? 1 : 0) != 0;
+            MeshOverlay = PlayerPrefs.GetInt("meshOverlay", MeshOverlay ? 1 : 0) != 0;
+            Meshes = new MeshCollector(MeshOverlay) { Interval = Mathf.Max(0.2f, MeshInterval) };
+            Meshes.Enabled = MeshCapture;
 
             Tracking = new TrackingGuard();
             Tracking.Changed += OnTrackingChanged;
@@ -122,6 +141,7 @@ namespace RackScanner.Scanner
             Sender?.Dispose();
             Store?.Dispose();
             Depth?.Dispose();
+            Meshes?.Dispose();
         }
 
         internal MarkerDefinition BuildMarkerDefinition() => new MarkerDefinition
@@ -149,6 +169,8 @@ namespace RackScanner.Scanner
             int every = RawMode ? RawSampleEveryNFrames : SampleEveryNFrames;
             if (State == Phase.Scanning && Tracking.IsNormal && Aligner.IsAligned && FrameCount % Mathf.Max(1, every) == 0)
                 Collect();
+            if (State == Phase.Scanning && Tracking.IsNormal && Aligner.IsAligned && MeshCapture)
+                CollectMesh(force: false);
 
             if (_chunks != null)
             {
@@ -171,6 +193,46 @@ namespace RackScanner.Scanner
                 var pt = new PointXYZRGB(q, c.r, c.g, c.b);
                 if (RawMode || _voxels.TryAdd(pt)) _chunks.Add(pt, now);
             }
+        }
+
+        /// <summary>바뀐 메쉬 블록을 마커 좌표로 읽어 로컬 저장 + 전송. force 면 간격을 무시하고 지금 읽는다.</summary>
+        void CollectMesh(bool force)
+        {
+            if (Meshes == null || Store == null) return;
+            _meshBuf.Clear();
+            Meshes.Collect(Aligner.ArToUnity, ScanTime, force, _meshBuf);
+            foreach (var b in _meshBuf) EmitMesh(b);
+            if (!string.IsNullOrEmpty(Meshes.LastError)) Message = "메쉬: " + Meshes.LastError;
+        }
+
+        void EmitMesh(MeshBlockMessage b)
+        {
+            var frame = Store.AppendMesh(b); // 로컬 원본이 기준
+            Sender?.EnqueueMeshFrame(b.BlockId, b.Revision, frame);
+            if (_meshLatest.TryGetValue(b.BlockId, out var old)) MeshTriangleCount -= old.TriangleCount;
+            if (b.IsRemoval) _meshLatest.Remove(b.BlockId);
+            else { _meshLatest[b.BlockId] = b; MeshTriangleCount += b.TriangleCount; }
+
+            // 같은 블록의 옛 판이 쌓여 mesh.bin 이 살아 있는 양의 3배 + 8MB 를 넘으면 마지막 판만 남긴다
+            long live = 0;
+            foreach (var m in _meshLatest.Values) live += 40 + m.Vertices.Length * ProtocolConstants.BytesPerMeshVertex + m.Indices.Length * 4;
+            if (Store.MeshFileBytes > live * 3 + 8L * 1024 * 1024) Store.CompactMesh(_meshLatest.Values);
+        }
+
+        internal void SetMeshCapture(bool on)
+        {
+            if (State == Phase.Scanning || State == Phase.Paused) return;
+            MeshCapture = on;
+            PlayerPrefs.SetInt("meshCapture", on ? 1 : 0);
+            if (Meshes != null) Meshes.Enabled = on;
+        }
+
+        internal void SetMeshOverlay(bool on)
+        {
+            MeshOverlay = on;
+            PlayerPrefs.SetInt("meshOverlay", on ? 1 : 0);
+            if (Meshes != null) Meshes.Overlay = on;
+            ApplyCameraFeed();
         }
 
         /// <summary>원본 모드 켜기/끄기. 촬영 중에는 바꾸지 않는다.</summary>
@@ -199,7 +261,8 @@ namespace RackScanner.Scanner
             {
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = Color.black;
-                cam.cullingMask = ShowCameraFeed ? ~0 : 0; // 끄면 아무것도 그리지 않고 검게 지우기만
+                // 끄면 아무것도 그리지 않고 검게 지우기만. 메쉬 겹쳐 보기가 켜져 있으면 검은 바탕에 메쉬만 그린다
+                cam.cullingMask = ShowCameraFeed || MeshOverlay ? ~0 : 0;
             }
         }
 
@@ -221,6 +284,7 @@ namespace RackScanner.Scanner
         void OnAligned(AlignedMessage al)
         {
             Tracking.ClearLost();
+            Meshes?.MarkAllDirty(); // 정렬이 바뀌었으니 메쉬도 새 좌표로 다시 보낸다
             if (Store != null) Store.Append(al);
             Sender?.SetAligned(al);
         }
@@ -248,6 +312,8 @@ namespace RackScanner.Scanner
             _voxels = new VoxelSet(VoxelSize);
             _chunks = new ChunkBuilder { MaxPoints = ChunkMaxPoints };
             TotalPoints = 0;
+            _meshLatest.Clear();
+            MeshTriangleCount = 0;
             State = Phase.Idle;
             PlayerPrefs.SetString("pcHost", PcHost);
             PlayerPrefs.SetFloat("markerWidth", MarkerPrintedWidth);
@@ -269,6 +335,7 @@ namespace RackScanner.Scanner
             if (Store == null) BeginSession(connect: false);
             if (!Aligner.IsAligned) { Message = "먼저 마커를 비춰 정렬하세요"; return; }
             _scanStart = Time.realtimeSinceStartup;
+            Meshes?.MarkAllDirty(); // 촬영 전에 이미 만들어진 메쉬도 이 세션에 담는다
             State = Phase.Scanning;
             Sender?.SendState(ScanState.Resumed);
         }
@@ -284,12 +351,28 @@ namespace RackScanner.Scanner
         {
             if (Store == null) return;
             while (_chunks.TryBuild(ScanTime, true, out var chunk)) Emit(chunk);
+            string meshNote = "";
+            if (MeshCapture && Aligner.IsAligned && State != Phase.Idle)
+            {
+                CollectMesh(force: true); // END_SCAN 전에 마지막 판까지 내보낸다
+                if (_meshLatest.Count > 0)
+                {
+                    try
+                    {
+                        Store.CompactMesh(_meshLatest.Values);
+                        var merged = IndexedMesh.Combine(_meshLatest.Values);
+                        ObjIO.Write(Path.Combine(Store.SessionDir, SessionMeta.MeshRawFileName), merged, $"session {SessionId}, ARKit mesh blocks {_meshLatest.Count}");
+                        meshNote = $", 메쉬 블록 {_meshLatest.Count} / 삼각형 {merged.TriangleCount:N0} ({SessionMeta.MeshRawFileName})";
+                    }
+                    catch (Exception e) { meshNote = ", 메쉬 저장 실패: " + e.Message; }
+                }
+            }
             var end = new EndScanMessage { TotalChunks = _chunks.ChunkCount };
             Store.Append(end);
-            Store.SaveMeta(new SessionMeta { SessionId = SessionId, DeviceInfo = DeviceInfo(), Marker = Aligner.Marker, UsedMarkerId = Aligner.Marker.Id, TotalChunks = (int)end.TotalChunks, PointCount = TotalPoints });
+            Store.SaveMeta(new SessionMeta { SessionId = SessionId, DeviceInfo = DeviceInfo(), Marker = Aligner.Marker, UsedMarkerId = Aligner.Marker.Id, TotalChunks = (int)end.TotalChunks, PointCount = TotalPoints, MeshBlockCount = _meshLatest.Count, MeshTriangleCount = MeshTriangleCount });
             Sender?.EndScan(end.TotalChunks);
             State = Phase.Completed;
-            Message = $"촬영완료: 청크 {end.TotalChunks}, 점 {TotalPoints}. 로컬 저장: {Store.SessionDir}";
+            Message = $"촬영완료: 청크 {end.TotalChunks}, 점 {TotalPoints}{meshNote}. 로컬 저장: {Store.SessionDir}";
         }
 
         /// <summary>저장된 세션을 PC 로 다시 보낸다 (촬영 후 파일 전송, 7일 만료 전 백업).</summary>
@@ -301,9 +384,10 @@ namespace RackScanner.Scanner
             if (s.MarkerDef != null) Sender.SetMarkerDef(s.MarkerDef);
             if (s.Aligned != null) Sender.SetAligned(s.Aligned);
             foreach (var c in s.Chunks) Sender.EnqueueChunk(c);
+            foreach (var b in s.MeshBlocks.Values) Sender.EnqueueMesh(b);
             Sender.EndScan(s.EndScan?.TotalChunks ?? (uint)s.Chunks.Count);
             Sender.Start();
-            Message = $"재전송 시작: {sessionId} (청크 {s.Chunks.Count}{(s.Truncated ? ", 끝부분 잘림" : "")})";
+            Message = $"재전송 시작: {sessionId} (청크 {s.Chunks.Count}, 메쉬 블록 {s.MeshBlocks.Count}{(s.Truncated ? ", 끝부분 잘림" : "")})";
         }
 
         internal List<string> StoredSessions() => LocalStore.ListSessions(SessionsRoot);

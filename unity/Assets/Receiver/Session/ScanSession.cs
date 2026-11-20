@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using RackScanner.Shared.Geometry;
 using RackScanner.Shared.IO;
+using RackScanner.Shared.Mesh;
 using RackScanner.Shared.Model;
 using RackScanner.Shared.Protocol;
 
@@ -19,6 +20,9 @@ namespace RackScanner.Receiver.Session
         public SessionMeta Meta { get; }
         public VoxelAccumulator Points { get; private set; }
         public List<AlignedMessage> AlignmentLog { get; } = new List<AlignedMessage>();
+        /// <summary>ARKit 메쉬 블록 (블록마다 받은 마지막 판, 블록 번호 순).</summary>
+        public SortedDictionary<uint, MeshBlockMessage> MeshBlocks { get; } = new SortedDictionary<uint, MeshBlockMessage>();
+        public int MeshTriangleCount { get; private set; }
         public int ReceivedChunks { get; private set; }
         public uint? ExpectedChunks { get; private set; }
         public bool Saved { get; private set; }
@@ -64,12 +68,31 @@ namespace RackScanner.Receiver.Session
                 case EndScanMessage es:
                     ExpectedChunks = es.TotalChunks;
                     return null;
+                case MeshBlockMessage mb:
+                    ApplyMesh(mb);
+                    return null;
                 default:
                     return null;
             }
         }
 
-        /// <summary>세션 폴더에 points.ply, session.json, alignment_log.csv 를 쓴다.</summary>
+        /// <summary>메쉬 블록 판 하나를 반영한다. 가진 것보다 새 판이면 true.</summary>
+        public bool ApplyMesh(MeshBlockMessage mb)
+        {
+            if (MeshBlocks.TryGetValue(mb.BlockId, out var old))
+            {
+                if (old.Revision >= mb.Revision) return false;
+                MeshTriangleCount -= old.TriangleCount;
+            }
+            if (mb.IsRemoval) MeshBlocks.Remove(mb.BlockId);
+            else { MeshBlocks[mb.BlockId] = mb; MeshTriangleCount += mb.TriangleCount; }
+            Saved = false;
+            return true;
+        }
+
+        /// <summary>블록들을 하나로 합친 원본 메쉬 (경계 정점 1mm 안은 붙임).</summary>
+        public IndexedMesh BuildMergedMesh() => IndexedMesh.Combine(MeshBlocks.Values);
+
         /// <summary>병합 칸 크기를 바꿔 누적을 다시 계산한다 (PC 화면의 "병합 칸"). 다시 저장해야 points.ply 에 반영된다.</summary>
         public void ResetAccumulator(float voxelSize, IReadOnlyList<PointXYZRGB> rawPoints)
         {
@@ -78,8 +101,16 @@ namespace RackScanner.Receiver.Session
             Saved = false;
         }
 
+        /// <summary>세션 폴더에 points.ply, session.json, alignment_log.csv 와 (메쉬가 있으면) mesh_raw.obj 를 쓴다.</summary>
         public void Save()
         {
+            if (MeshBlocks.Count > 0)
+            {
+                var merged = BuildMergedMesh();
+                ObjIO.Write(Path.Combine(SessionDir, SessionMeta.MeshRawFileName), merged, $"session {SessionId}, ARKit mesh blocks {MeshBlocks.Count} (original density)");
+                Meta.MeshBlockCount = MeshBlocks.Count;
+                Meta.MeshTriangleCount = merged.TriangleCount;
+            }
             var pts = Points.ToPoints();
             PlyIO.Write(Path.Combine(SessionDir, SessionMeta.PointsFileName), pts);
             Meta.PointCount = pts.Count;
@@ -120,6 +151,22 @@ namespace RackScanner.Receiver.Session
             list.Sort(StringComparer.Ordinal);
             list.Reverse();
             return list;
+        }
+
+        /// <summary>단순화한 메쉬를 mesh.obj 로 쓴다.</summary>
+        public static string SaveSimplifiedMesh(string sessionDir, IndexedMesh mesh, float maxError, int sourceTriangles)
+        {
+            string path = Path.Combine(sessionDir, SessionMeta.MeshFileName);
+            ObjIO.Write(path, mesh, string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "adaptive simplification (QEM), max error {0:F1} mm, triangles {1} -> {2}", maxError * 1000, sourceTriangles, mesh.TriangleCount));
+            return path;
+        }
+
+        /// <summary>저장된 세션의 원본 메쉬 (mesh_raw.obj). 없으면 null.</summary>
+        public static IndexedMesh LoadMesh(string sessionDir)
+        {
+            string path = Path.Combine(sessionDir, SessionMeta.MeshRawFileName);
+            return File.Exists(path) ? ObjIO.Read(path) : null;
         }
 
         /// <summary>저장된 세션의 점군과 메타를 읽는다 (분석만 반복 실행할 때).</summary>
