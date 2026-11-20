@@ -47,6 +47,8 @@ namespace RackScanner.Scanner
         [Tooltip("원본 모드: ARKit 깊이 맵을 가공 없이 보낸다 (시간 평활화·복셀·가장자리 필터·컬러 끔, 거리 5m 까지). 점이 많아 RawSampleEveryNFrames 마다 한 프레임만")]
         public bool RawMode = true;
         public int RawSampleEveryNFrames = 30;
+        [Tooltip("화면에 카메라 영상을 그릴지. 끄면 검은 화면에 UI 만 (LiDAR 수집·추적·마커 인식은 그대로, 렌더링 부하·배터리 절약)")]
+        public bool ShowCameraFeed = false;
         public int SampleEveryNFrames = 3;
         public int ChunkMaxPoints = 8000;
 
@@ -95,6 +97,7 @@ namespace RackScanner.Scanner
             MarkerPrintedHeight = PlayerPrefs.GetFloat("markerHeight", MarkerPrintedHeight);
             VoxelSize = PlayerPrefs.GetFloat("voxelSize", VoxelSize);
             RawMode = PlayerPrefs.GetInt("rawMode", RawMode ? 1 : 0) != 0;
+            ShowCameraFeed = PlayerPrefs.GetInt("showCamera", ShowCameraFeed ? 1 : 0) != 0;
 
             Tracking = new TrackingGuard();
             Tracking.Changed += OnTrackingChanged;
@@ -110,6 +113,7 @@ namespace RackScanner.Scanner
             };
             Depth = new DepthSampler { PixelStep = Mathf.Max(1, DepthPixelStep) };
             ApplyCaptureMode();
+            ApplyCameraFeed();
             if (gameObject.GetComponent<ScanUI>() == null) gameObject.AddComponent<ScanUI>();
         }
 
@@ -176,6 +180,27 @@ namespace RackScanner.Scanner
             RawMode = raw;
             PlayerPrefs.SetInt("rawMode", raw ? 1 : 0);
             ApplyCaptureMode();
+        }
+
+        internal void SetCameraFeed(bool show)
+        {
+            ShowCameraFeed = show;
+            PlayerPrefs.SetInt("showCamera", show ? 1 : 0);
+            ApplyCameraFeed();
+        }
+
+        void ApplyCameraFeed()
+        {
+            if (CameraManager == null) return;
+            var bg = CameraManager.GetComponent<ARCameraBackground>();
+            if (bg != null) bg.enabled = ShowCameraFeed;
+            var cam = CameraManager.GetComponent<Camera>();
+            if (cam != null)
+            {
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
+                cam.cullingMask = ShowCameraFeed ? ~0 : 0; // 끄면 아무것도 그리지 않고 검게 지우기만
+            }
         }
 
         void ApplyCaptureMode()
