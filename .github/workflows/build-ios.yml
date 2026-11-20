@@ -102,6 +102,15 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           sudo docker image prune --all --force > /dev/null || true
           df -h /
+      # 디스크를 비운 뒤에도 exit 137 이 다시 났다 (#11) → 메모리 부족으로 보고 임시 디스크(/mnt)에 스왑을 크게 잡는다.
+      - name: Add swap
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/rs-swapfile
+          sudo chmod 600 /mnt/rs-swapfile
+          sudo mkswap /mnt/rs-swapfile > /dev/null
+          sudo swapon /mnt/rs-swapfile
+          free -h
       - uses: actions/checkout@v4
         with:
           lfs: true
