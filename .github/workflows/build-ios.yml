@@ -1,6 +1,29 @@
 name: Build iOS (unsigned ipa)
 on:
-  workflow_dispatch:   # 수동 실행만. 푸시마다 돌리지 않는다 (macOS 무료 분량 절약)
+  push:
+    branches: [main]
+    # 앱에 영향 없는 변경은 빌드하지 않는다 (macOS 무료 분량 절약)
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'tests/**'
+      - 'tools/**'
+      - 'samples/**'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: '올릴 버전 자리 (main 에서 실행할 때만 Release 를 만든다)'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+# 한 번에 하나씩 돌린다. 버전 계산과 태그 생성이 겹치지 않게 하려는 것 (진행 중인 실행은 끝까지 돈다)
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 # 초안 (docs/DEV_PLAN.md). 실제로 돌려 보고 맞춘다. M0 에서 검증할 것:
 #  - Unity Personal 라이선스 활성화 (secrets: UNITY_LICENSE, UNITY_EMAIL, UNITY_PASSWORD)
@@ -8,7 +31,35 @@ on:
 #  - 서명 없는 .ipa 를 Sideloadly 가 받아 주는지
 
 jobs:
+  # 마지막 vX.Y.Z 태그에서 한 자리 올린다. 푸시는 patch, 수동 실행은 bump 입력을 따른다. 태그가 없으면 0.1.0.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 태그를 읽으려고
+      - id: v
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          LAST=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          if [ -z "$LAST" ]; then
+            NEXT=0.1.0
+          else
+            IFS=. read -r MA MI PA <<< "${LAST#v}"
+            case "$BUMP" in
+              major) NEXT="$((MA+1)).0.0" ;;
+              minor) NEXT="$MA.$((MI+1)).0" ;;
+              *)     NEXT="$MA.$MI.$((PA+1))" ;;
+            esac
+          fi
+          echo "last=${LAST:-none} → next=$NEXT ($BUMP)"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
   unity-export:
+    needs: version
     runs-on: ubuntu-latest
     steps:
       # TODO: iOS 모듈이 든 Unity 이미지가 커서 디스크가 모자라면 free-disk-space 단계 추가
@@ -29,6 +80,8 @@ jobs:
           projectPath: unity
           targetPlatform: iOS
           buildMethod: RackScanner.EditorTools.RackScannerBuild.BuildIOS
+          versioning: None   # 버전은 위 version 잡이 정하고 BuildIOS 가 -appVersion 으로 받는다
+          customParameters: -appVersion ${{ needs.version.outputs.version }} -appBuild ${{ github.run_number }}
       # Xcode 프로젝트 안의 셸 스크립트 실행 권한을 지키려고 tar 로 묶어 올린다 (upload-artifact 는 권한을 잃음)
       - name: Pack Xcode project
         run: |
@@ -39,7 +92,7 @@ jobs:
         with:
           name: xcode-project
           path: xcode-project.tgz
-          retention-days: 3
+          retention-days: 1
 
   xcode-build:
     needs: unity-export
@@ -65,4 +118,26 @@ jobs:
         with:
           name: unsigned-ipa
           path: app.ipa
-          retention-days: 7
+          retention-days: 3   # 오래 둘 것은 Release 에 있다
+
+  # main 에서만 태그 vX.Y.Z 를 만들고 Release 에 ipa 를 올린다 (다른 브랜치 수동 실행은 Artifacts 만)
+  release:
+    needs: [version, xcode-build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-ipa
+      - run: mv app.ipa "RackScanner-v$VERSION.ipa"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: v${{ env.VERSION }}
+          generate_release_notes: true
+          files: RackScanner-v${{ env.VERSION }}.ipa

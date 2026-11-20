@@ -69,16 +69,16 @@ Nov 18, 2026 · @양국현
 
 유료 Apple 계정 없이 무료 Apple ID로 설치한다. 맥북의 Xcode가 아이패드를 인식하면 맥북에서 직접 빌드하고, 인식하지 못하면 아래 경로를 쓴다. 이 경로는 맥북이 없어도 된다.
 
-1. GitHub Actions를 수동으로 실행한다. Linux 러너에서 Unity가 Xcode 프로젝트를 내보낸다.
+1. main에 푸시하면 GitHub Actions가 자동으로 돈다(문서·테스트·도구만 바뀐 푸시는 건너뜀, 수동 실행도 가능). Linux 러너에서 Unity가 Xcode 프로젝트를 내보낸다.
 2. macOS 러너가 서명 없이 xcodebuild로 아카이브해 .ipa로 묶는다. macOS는 무료 분량을 10배로 쓰므로 이 단계만 맥 러너에서 돌린다.
-3. 실행이 끝나면 Artifacts에서 .ipa를 내려받는다.
+3. 실행이 끝나면 버전이 자동으로 올라간 태그(vX.Y.Z, 푸시마다 patch +1)와 GitHub Release가 만들어지고, Release에서 .ipa를 내려받는다.
 4. Windows PC에서 Sideloadly로 .ipa를 아이패드에 설치한다(무료 Apple ID, USB-C 연결).
 5. 7일이 지나면 같은 Apple ID와 번들 ID로 다시 설치한다. 그 전에 아이패드의 로컬 스캔 파일을 PC로 백업한다.
 
 | 항목 | 내용 |
 | --- | --- |
 | 무료 Apple ID 제한 | 앱 3개까지, 7일마다 만료 |
-| GitHub 무료 분량 | 비공개 레포는 월 2,000분이고 macOS는 10배로 소진(약 200분). 수동 실행과 Library 캐시로 아낀다 |
+| GitHub 무료 분량 | 비공개 레포는 월 2,000분이고 macOS는 10배로 소진(약 200분). 앱과 무관한 경로 제외와 Library 캐시로 아낀다. Release 저장은 무료 |
 | Unity 라이선스 | Personal은 GameCI 방식의 활성화 파일이 필요하다. CI에서 막힐 수 있어 M0에서 시험한다 |
 | 검증 필요 | 서명 없는 .ipa 생성, Sideloadly 설치, 아이패드의 iPadOS 호환 |
 
@@ -88,7 +88,7 @@ Nov 18, 2026 · @양국현
 
 ```
 rack-scanner/
-├─ .github/workflows/        # CI: iOS 빌드 (수동 실행)
+├─ .github/workflows/        # CI: iOS 빌드 (main 푸시 시 자동, Release 업로드)
 ├─ unity/                    # Unity 프로젝트 (빌드 대상 2개)
 │  ├─ Assets/
 │  │  ├─ Shared/             # 프로토콜, 좌표 변환, 데이터 모델 (양쪽 공용)
@@ -424,7 +424,7 @@ Receiver와 Analysis는 includePlatforms 대신 `"excludePlatforms": ["iOS"]`를
 
 **빌드 워크플로 초안 (.github/workflows/build-ios.yml)**
 
-초안이며 실제로 돌려 검증해야 한다. 특히 GameCI의 출력 경로(아래 build/iOS)와 Xcode 프로젝트 이름은 실행 결과를 보고 맞춘다.
+최초 초안이다. 실제 파일은 main 푸시 시 자동 실행, 버전 자동 증가, Release 업로드로 바뀌었으니 파일을 기준으로 본다. 초안이며 실제로 돌려 검증해야 한다. 특히 GameCI의 출력 경로(아래 build/iOS)와 Xcode 프로젝트 이름은 실행 결과를 보고 맞춘다.
 
 ```yaml
 name: Build iOS (unsigned ipa)

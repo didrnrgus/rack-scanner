@@ -21,6 +21,11 @@ namespace RackScanner.EditorTools
         {
             string path = Arg("-customBuildPath") ?? "Builds/iOS";
             PlayerSettings.iOS.cameraUsageDescription = "LiDAR 깊이와 카메라 영상으로 랙을 스캔합니다.";
+            // CI 가 넘기는 버전 (build-ios.yml 의 version 잡). 에디터 메뉴로 빌드하면 프로젝트 설정 값을 그대로 쓴다.
+            string version = Arg("-appVersion");
+            if (!string.IsNullOrEmpty(version)) PlayerSettings.bundleVersion = version;
+            string buildNumber = Arg("-appBuild");
+            if (!string.IsNullOrEmpty(buildNumber)) PlayerSettings.iOS.buildNumber = buildNumber;
             Build(BuildTarget.iOS, ScannerScene, path);
         }
 
