@@ -45,8 +45,10 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 
 1. 시크릿 등록 (레포 Settings → Secrets → Actions): `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD`
    (Personal 라이선스 활성화 파일 만드는 법은 GameCI 문서 "Activation" 참고).
-2. Actions → **Build iOS (unsigned ipa)** → Run workflow (수동 실행만).
-3. 끝나면 Artifacts 에서 `unsigned-ipa` 내려받기.
+2. main 에 푸시하면 **Build iOS (unsigned ipa)** 가 자동으로 돈다 (`docs/`, `*.md`, `tests/`, `tools/`, `samples/` 만 바뀐 푸시는 건너뜀).
+   버전은 마지막 `vX.Y.Z` 태그에서 patch 를 자동으로 +1 한다 (태그가 없으면 `v0.1.0`). 직접 올릴 필요 없다.
+   minor/major 를 올리려면 Actions → Run workflow 에서 `bump` 를 골라 main 으로 수동 실행한다.
+3. 끝나면 레포의 **Releases** 에서 `RackScanner-vX.Y.Z.ipa` 내려받기 (다른 브랜치에서 수동 실행하면 Release 없이 Artifacts 에만 올라감).
 4. Windows PC: iTunes·iCloud (Apple 사이트 버전, MS Store 버전 말고) 와 Sideloadly 설치, 아이패드 USB-C 연결,
    아이패드 설정 → 개인정보 보호 및 보안 → **개발자 모드** 켜기.
 5. Sideloadly 에 `.ipa` 를 넣고 설치 전용 무료 Apple ID 로 설치.
