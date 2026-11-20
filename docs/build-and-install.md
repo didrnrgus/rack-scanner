@@ -60,10 +60,15 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 
 ## 3-B. GitHub Actions + Sideloadly (맥북 없이)
 
-1. 시크릿 등록 (레포 Settings → Secrets → Actions): `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD`
-   (Personal 라이선스 활성화 파일 만드는 법은 GameCI 문서 "Activation" 참고).
-   `UNITY_LICENSE` 에는 Unity Hub 로 Personal 라이선스를 활성화한 PC 의 `C:\ProgramData\Unity\Unity_lic.ulf` 내용 전체를 넣는다.
-   최근 Hub 는 `%LOCALAPPDATA%\Unity\licenses\UnityEntitlementLicense.xml` 만 만들기도 한다 (TODO: 이 파일을 GameCI 가 받는지 첫 실행에서 확인).
+1. 시크릿 등록 (레포 Settings → Secrets and variables → Actions → New repository secret). CI 는 **개인 Unity 계정의 Personal 라이선스**를 쓴다.
+   Actions 의 iOS 빌드는 GitHub 서버에서 Unity 를 실행해 Xcode 프로젝트를 만드는데, Unity 는 라이선스 없이는 시작하지 않기 때문이다.
+   1. 개인 Unity ID 로 Unity Hub 에 로그인 → Settings(Preferences) → Licenses → Add → **Get a free personal license**.
+      회사 Pro 계정으로 로그인해 둔 PC 에서 하면 회사 라이선스와 섞이니, 맥북처럼 개인 계정만 쓰는 기기에서 한다.
+   2. 생긴 라이선스 파일을 텍스트로 연다:
+      Windows `C:\ProgramData\Unity\Unity_lic.ulf`, macOS `/Library/Application Support/Unity/Unity_lic.ulf`.
+   3. 시크릿 3개: `UNITY_LICENSE` = 그 파일 내용 전체, `UNITY_EMAIL` / `UNITY_PASSWORD` = 개인 Unity ID 로그인 정보.
+   - 값은 등록 후 아무도 다시 볼 수 없고 빌드할 때만 쓰인다. Personal 라이선스는 주기적으로 만료되니, 빌드가 라이선스 오류로 실패하면 2~3 을 다시 한다.
+   - TODO: 최신 Hub 가 `.ulf` 대신 `UnityEntitlementLicense.xml` 만 만들면 GameCI 가 받는지 첫 실행에서 확인.
 2. main 에 푸시하면 **Build iOS (unsigned ipa)** 가 자동으로 돈다 (`docs/`, `*.md`, `tests/`, `tools/`, `samples/` 만 바뀐 푸시는 건너뜀).
    버전은 마지막 `vX.Y.Z` 태그에서 patch 를 자동으로 +1 한다 (태그가 없으면 `v0.1.0`). 직접 올릴 필요 없다.
    minor/major 를 올리려면 Actions → Run workflow 에서 `bump` 를 골라 main 으로 수동 실행한다.
