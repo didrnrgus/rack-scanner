@@ -96,6 +96,8 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 따로 실행 파일이 필요할 때만 **RackScanner → Build → Windows** → `unity/Builds/Windows/RackReceiver.exe`.
 - 처음 실행 때 Windows 방화벽에서 **개인 네트워크 허용** (에디터로 돌리면 Unity Editor 에 대해 허용).
 - 화면 왼쪽 위에 표시되는 PC 주소를 아이패드 앱의 "PC 주소" 에 입력.
+- 카메라 (Game 화면): 우클릭 드래그 회전 · **휠 버튼 드래그(또는 Shift/Ctrl+우클릭) 패닝** · 휠 확대 ·
+  WASD/QE 이동 (Shift 빠르게) · F 원점(마커)으로 · R 처음 시점으로.
 - 세션은 실행 파일 옆(에디터에서는 `unity/sessions/`)에 저장된다. git 에는 올라가지 않는다.
 
 ## 5. 아이패드 앱 사용 순서
