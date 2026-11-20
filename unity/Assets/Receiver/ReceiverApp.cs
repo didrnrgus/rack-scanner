@@ -7,6 +7,7 @@ using RackScanner.Analysis;
 using RackScanner.Receiver.Net;
 using RackScanner.Receiver.Session;
 using RackScanner.Receiver.View;
+using RackScanner.Shared.Geometry;
 using RackScanner.Shared.IO;
 using RackScanner.Shared.Model;
 using RackScanner.Shared.Protocol;
@@ -21,11 +22,22 @@ namespace RackScanner.Receiver
     public sealed class ReceiverApp : MonoBehaviour
     {
         public int Port = ProtocolConstants.DefaultPort;
-        [Tooltip("PC 누적 복셀 크기 (m). 같은 칸의 점을 평균해 points.ply 로 저장한다. 1mm 면 사실상 받은 점 그대로 (아이패드 원본 모드용)")] public float AccumulateVoxel = 0.001f;
+        [Tooltip("처음 병합 칸 크기 (m). 같은 칸에 다시 들어온 점은 화면에 새로 그리지 않고 평균에 합쳐 points.ply 로 저장한다. 화면에서 원본/5mm/1cm 로 바꿀 수 있다")] public float AccumulateVoxel = 0.005f;
 
         [Tooltip("베이스 마커 이미지. 원점에 실제 크기·기울기로 쿼드를 그린다 (비우면 노란 사각형)")] public Texture2D MarkerTexture;
         ScanServer _server;
         MarkerQuadView _markerQuad;
+        // 병합: 받은 원본은 _raw 에 두고, 화면·저장은 선택한 칸으로 합친다 (같은 물체를 다시 비춰도 겹쳐 쌓이지 않게)
+        static readonly float[] MergeSizes = { 0.001f, 0.005f, 0.01f };
+        static readonly string[] MergeLabels = { "원본 (1mm)", "5mm", "1cm" };
+        int _mergeIdx = 1;
+        readonly List<PointXYZRGB> _raw = new List<PointXYZRGB>();
+        VoxelSet _displaySet;
+        // 최신 프레임만 보기: 가장 최근 키프레임 시각의 청크만 따로 그린다
+        PointCloudView _live;
+        bool _liveOnly;
+        double _liveTime = double.NegativeInfinity;
+        float MergeSize => MergeSizes[_mergeIdx];
         ScanSession _session;
         PointCloudView _cloud;
         RackSpawner _spawner;
@@ -52,6 +64,11 @@ namespace RackScanner.Receiver
             Application.runInBackground = true;
             _cloud = new GameObject("PointCloud").AddComponent<PointCloudView>();
             _cloud.transform.SetParent(transform, false);
+            _live = new GameObject("LatestFrame").AddComponent<PointCloudView>();
+            _live.transform.SetParent(transform, false);
+            _live.gameObject.SetActive(false);
+            _mergeIdx = NearestMerge(AccumulateVoxel);
+            _displaySet = new VoxelSet(MergeSize);
             _spawner = GetComponent<RackSpawner>();
             if (_spawner == null) _spawner = gameObject.AddComponent<RackSpawner>(); // ?? 는 Unity 의 가짜 null 에서 틀리므로 쓰지 않는다
             SceneHelpers.CreateAxesAndGrid(transform);
@@ -117,10 +134,10 @@ namespace RackScanner.Receiver
                     {
                         // 새 세션 (같은 세션 ID 면 재연결로 보고 이어서 받는다)
                         _session?.Dispose();
-                        _cloud.Clear();
+                        ClearDisplay();
                         _spawner.Clear();
                         _result = null;
-                        _session = new ScanSession(SessionsRoot, e.SessionId, e.Hello.DeviceInfo, AccumulateVoxel);
+                        _session = new ScanSession(SessionsRoot, e.SessionId, e.Hello.DeviceInfo, MergeSize);
                         Log($"새 세션 {e.SessionId} ({e.Hello.DeviceInfo}) from {e.Remote}");
                     }
                     else Log($"재연결: {e.SessionId}");
@@ -138,7 +155,7 @@ namespace RackScanner.Receiver
                     if (_session == null || e.SessionId != _session.SessionId) break;
                     if (e.Message is StateMessage st) { _lastState = st.State.ToString(); break; }
                     var chunk = _session.Apply(e.Message, e.RawFrame);
-                    if (chunk != null) _cloud.AddPoints(chunk.Points);
+                    if (chunk != null) AddChunk(chunk);
                     if (e.Message is MarkerDefMessage mdq)
                         _markerQuad.SetMarker(new Vector3(mdq.Marker.Position.X, mdq.Marker.Position.Y, mdq.Marker.Position.Z), mdq.Marker.PrintedWidth, mdq.Marker.PrintedHeight);
                     if (e.Message is AlignedMessage alq) _markerQuad.SetTilt(alq.PitchDeg, alq.RollDeg);
@@ -179,13 +196,67 @@ namespace RackScanner.Receiver
             try
             {
                 var pts = ScanSession.LoadPoints(dir, out var meta);
-                _cloud.Clear();
+                ClearDisplay();
                 _spawner.Clear();
-                _cloud.AddPoints(pts);
+                _raw.AddRange(pts);
+                RebuildDisplay();
                 Log($"불러옴: {Path.GetFileName(dir)} ({pts.Count}점)");
                 RunAnalysis(pts, dir);
             }
             catch (Exception e) { Log("불러오기 실패: " + e.Message); }
+        }
+
+        static int NearestMerge(float size)
+        {
+            int best = 0;
+            for (int i = 1; i < MergeSizes.Length; i++)
+                if (Mathf.Abs(MergeSizes[i] - size) < Mathf.Abs(MergeSizes[best] - size)) best = i;
+            return best;
+        }
+
+        void ClearDisplay()
+        {
+            _raw.Clear();
+            _cloud.Clear();
+            _live.Clear();
+            _liveTime = double.NegativeInfinity;
+            _displaySet = new VoxelSet(MergeSize);
+        }
+
+        void AddChunk(PointChunkMessage chunk)
+        {
+            _raw.AddRange(chunk.Points);
+            AddToDisplay(chunk.Points);
+            // 아이패드 원본 모드는 한 프레임이 같은 키프레임 시각의 청크 여러 개로 온다
+            if (chunk.KeyframeTime > _liveTime + 0.3) { _live.Clear(); _liveTime = chunk.KeyframeTime; }
+            _live.AddPoints(chunk.Points);
+        }
+
+        void AddToDisplay(IReadOnlyList<PointXYZRGB> pts)
+        {
+            var fresh = new List<PointXYZRGB>(pts.Count);
+            for (int i = 0; i < pts.Count; i++) if (_displaySet.TryAdd(pts[i])) fresh.Add(pts[i]);
+            if (fresh.Count > 0) _cloud.AddPoints(fresh);
+        }
+
+        void RebuildDisplay()
+        {
+            _cloud.Clear();
+            _displaySet = new VoxelSet(MergeSize);
+            AddToDisplay(_raw);
+        }
+
+        void SetMerge(int idx)
+        {
+            if (idx == _mergeIdx) return;
+            _mergeIdx = idx;
+            RebuildDisplay();
+            if (_session != null)
+            {
+                bool wasSaved = _session.Saved;
+                _session.ResetAccumulator(MergeSize, _raw);
+                if (wasSaved) { _session.Save(); Log($"병합 {MergeLabels[_mergeIdx]} 로 다시 저장 (점 {_session.Meta.PointCount:N0})"); }
+            }
         }
 
         void OnGUI()
@@ -199,7 +270,19 @@ namespace RackScanner.Receiver
             if (_session != null)
             {
                 GUILayout.Label($"세션: {_session.SessionId}  {_deviceInfo}");
-                GUILayout.Label($"청크 {_session.ReceivedChunks}{(_session.ExpectedChunks.HasValue ? "/" + _session.ExpectedChunks : "")} · 복셀 {_session.Points.Count:N0} · 표시 {_cloud.PointCount:N0}");
+                GUILayout.Label($"청크 {_session.ReceivedChunks}{(_session.ExpectedChunks.HasValue ? "/" + _session.ExpectedChunks : "")} · 받은 점 {_raw.Count:N0} · 병합 후 {_session.Points.Count:N0}");
+            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("병합 칸", GUILayout.Width(60));
+            int merge = GUILayout.Toolbar(_mergeIdx, MergeLabels);
+            GUILayout.EndHorizontal();
+            if (merge != _mergeIdx) SetMerge(merge);
+            bool live = GUILayout.Toggle(_liveOnly, $"최신 프레임만 보기 ({_live.PointCount:N0}점)");
+            if (live != _liveOnly)
+            {
+                _liveOnly = live;
+                _cloud.gameObject.SetActive(!live);
+                _live.gameObject.SetActive(live);
             }
 
             GUILayout.Space(6);

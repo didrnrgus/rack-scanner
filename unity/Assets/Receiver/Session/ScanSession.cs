@@ -17,7 +17,7 @@ namespace RackScanner.Receiver.Session
         public string SessionId { get; }
         public string SessionDir { get; }
         public SessionMeta Meta { get; }
-        public VoxelAccumulator Points { get; }
+        public VoxelAccumulator Points { get; private set; }
         public List<AlignedMessage> AlignmentLog { get; } = new List<AlignedMessage>();
         public int ReceivedChunks { get; private set; }
         public uint? ExpectedChunks { get; private set; }
@@ -70,6 +70,14 @@ namespace RackScanner.Receiver.Session
         }
 
         /// <summary>세션 폴더에 points.ply, session.json, alignment_log.csv 를 쓴다.</summary>
+        /// <summary>병합 칸 크기를 바꿔 누적을 다시 계산한다 (PC 화면의 "병합 칸"). 다시 저장해야 points.ply 에 반영된다.</summary>
+        public void ResetAccumulator(float voxelSize, IReadOnlyList<PointXYZRGB> rawPoints)
+        {
+            Points = new VoxelAccumulator(voxelSize);
+            Points.AddRange(rawPoints);
+            Saved = false;
+        }
+
         public void Save()
         {
             var pts = Points.ToPoints();
