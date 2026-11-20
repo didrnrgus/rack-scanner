@@ -23,7 +23,9 @@ namespace RackScanner.Receiver
         public int Port = ProtocolConstants.DefaultPort;
         [Tooltip("PC 누적 복셀 크기 (m). 같은 칸의 점을 평균해 points.ply 로 저장한다. 1mm 면 사실상 받은 점 그대로 (아이패드 원본 모드용)")] public float AccumulateVoxel = 0.001f;
 
+        [Tooltip("베이스 마커 이미지. 원점에 실제 크기·기울기로 쿼드를 그린다 (비우면 노란 사각형)")] public Texture2D MarkerTexture;
         ScanServer _server;
+        MarkerQuadView _markerQuad;
         ScanSession _session;
         PointCloudView _cloud;
         RackSpawner _spawner;
@@ -53,6 +55,7 @@ namespace RackScanner.Receiver
             _spawner = GetComponent<RackSpawner>();
             if (_spawner == null) _spawner = gameObject.AddComponent<RackSpawner>(); // ?? 는 Unity 의 가짜 null 에서 틀리므로 쓰지 않는다
             SceneHelpers.CreateAxesAndGrid(transform);
+            _markerQuad = MarkerQuadView.Create(transform, MarkerTexture);
             var cam = Camera.main;
             if (cam == null) { cam = new GameObject("Main Camera").AddComponent<Camera>(); cam.tag = "MainCamera"; }
             cam.clearFlags = CameraClearFlags.SolidColor;
@@ -136,6 +139,9 @@ namespace RackScanner.Receiver
                     if (e.Message is StateMessage st) { _lastState = st.State.ToString(); break; }
                     var chunk = _session.Apply(e.Message, e.RawFrame);
                     if (chunk != null) _cloud.AddPoints(chunk.Points);
+                    if (e.Message is MarkerDefMessage mdq)
+                        _markerQuad.SetMarker(new Vector3(mdq.Marker.Position.X, mdq.Marker.Position.Y, mdq.Marker.Position.Z), mdq.Marker.PrintedWidth, mdq.Marker.PrintedHeight);
+                    if (e.Message is AlignedMessage alq) _markerQuad.SetTilt(alq.PitchDeg, alq.RollDeg);
                     if (e.Message is MarkerDefMessage md) Log($"마커 정의: {md.Marker.Id}, {md.Marker.PrintedWidth * 100:F1}×{md.Marker.PrintedHeight * 100:F1}cm");
                     if (e.Message is AlignedMessage al) Log($"정렬 완료: {al.MarkerId}, 거리 {al.Distance:F2}m, 시야각 {al.ViewAngleDeg:F1}°, pitch {al.PitchDeg:F1}° roll {al.RollDeg:F1}° ({al.FrameCount}프레임)");
                     if (e.Message is EndScanMessage es) Log($"촬영완료: 총 {es.TotalChunks} 청크");

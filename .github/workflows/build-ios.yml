@@ -9,6 +9,10 @@ on:
       - 'tests/**'
       - 'tools/**'
       - 'samples/**'
+      # PC 전용 코드 (asmdef 가 iOS 를 제외) 와 에디터 세팅 메뉴는 앱에 들어가지 않는다
+      - 'unity/Assets/Receiver/**'
+      - 'unity/Assets/Analysis/**'
+      - 'unity/Assets/Editor/Setup/**'
   workflow_dispatch:
     inputs:
       bump:

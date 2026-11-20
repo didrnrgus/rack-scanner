@@ -218,13 +218,34 @@ namespace RackScanner.EditorTools
             return changed;
         }
 
+        static bool AssignReceiverMarker()
+        {
+            var type = Type.GetType("RackScanner.Receiver.ReceiverApp, RackScanner.Receiver");
+            if (type == null) return false;
+            var app = UnityEngine.Object.FindAnyObjectByType(type);
+            if (app == null) return false;
+            var so = new SerializedObject(app);
+            var prop = so.FindProperty("MarkerTexture");
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(MarkerTexture);
+            if (prop == null || prop.objectReferenceValue == tex) return false;
+            prop.objectReferenceValue = tex;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return true;
+        }
+
         static void CreateReceiverScene()
         {
             string path = RackScannerScenes.Receiver;
-            if (File.Exists(path)) return;
+            if (File.Exists(path))
+            {
+                // 이미 있으면 ReceiverApp 의 마커 이미지 연결만 확인한다 (원점 마커 쿼드용).
+                var existing = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+                if (AssignReceiverMarker()) EditorSceneManager.SaveScene(existing);
+                return;
+            }
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var type = Type.GetType("RackScanner.Receiver.ReceiverApp, RackScanner.Receiver");
-            if (type != null) new GameObject("ReceiverApp", type);
+            if (type != null) { new GameObject("ReceiverApp", type); AssignReceiverMarker(); }
             else Debug.LogWarning("[RackScanner] ReceiverApp 타입을 찾지 못했습니다 (실행 시 자동 생성되므로 그대로 둬도 됨).");
             EditorSceneManager.SaveScene(scene, path);
             Debug.Log("[RackScanner] created " + path);

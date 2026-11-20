@@ -71,7 +71,7 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
    3. 시크릿 3개: `UNITY_LICENSE` = 그 파일 내용 전체, `UNITY_EMAIL` / `UNITY_PASSWORD` = 개인 Unity ID 로그인 정보.
    - 값은 등록 후 아무도 다시 볼 수 없고 빌드할 때만 쓰인다. Personal 라이선스는 주기적으로 만료되니, 빌드가 라이선스 오류로 실패하면 2~3 을 다시 한다.
    - TODO: 최신 Hub 가 `.ulf` 대신 `UnityEntitlementLicense.xml` 만 만들면 GameCI 가 받는지 첫 실행에서 확인.
-2. main 에 푸시하면 **Build iOS (unsigned ipa)** 가 자동으로 돈다 (`docs/`, `*.md`, `tests/`, `tools/`, `samples/` 만 바뀐 푸시는 건너뜀).
+2. main 에 푸시하면 **Build iOS (unsigned ipa)** 가 자동으로 돈다 (`docs/`, `*.md`, `tests/`, `tools/`, `samples/`, PC 전용 `Receiver/`·`Analysis/`, 에디터 세팅 메뉴만 바뀐 푸시는 건너뜀).
    버전은 마지막 `vX.Y.Z` 태그에서 patch 를 자동으로 +1 한다 (태그가 없으면 `v0.1.0`). 직접 올릴 필요 없다.
    minor/major 를 올리려면 Actions → Run workflow 에서 `bump` 를 골라 main 으로 수동 실행한다.
    위 1~2단계(`ProjectSettings/`, `Packages/`, Scanner 씬 커밋)가 끝나기 전에는 빌드를 경고만 남기고 건너뛴다. 시크릿이 없으면 바로 실패한다.
@@ -98,6 +98,7 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 - 화면 왼쪽 위에 표시되는 PC 주소를 아이패드 앱의 "PC 주소" 에 입력.
 - 카메라 (Game 화면): 우클릭 드래그 회전 · **휠 버튼 드래그(또는 Shift/Ctrl+우클릭) 패닝** · 휠 확대 ·
   WASD/QE 이동 (Shift 빠르게) · F 원점(마커)으로 · R 처음 시점으로.
+- 원점에 베이스 마커를 실제 크기(앱이 보낸 마커 cm)와 기울기(정렬 pitch·roll)로 그린다. 점군 속 마커 면과 겹치는지 보면 정렬·크기가 맞는지 바로 확인된다.
 - 세션은 실행 파일 옆(에디터에서는 `unity/sessions/`)에 저장된다. git 에는 올라가지 않는다.
 
 ## 5. 아이패드 앱 사용 순서

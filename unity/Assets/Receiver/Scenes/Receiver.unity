@@ -150,6 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: RackScanner.Receiver::RackScanner.Receiver.ReceiverApp
   Port: 47800
   AccumulateVoxel: 0.001
+  MarkerTexture: {fileID: 2800000, guid: 1b62584e6faa09641941496fe53cc640, type: 3}
 --- !u!4 &933131915
 Transform:
   m_ObjectHideFlags: 0
