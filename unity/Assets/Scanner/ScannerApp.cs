@@ -69,9 +69,9 @@ namespace RackScanner.Scanner
         {
             Application.targetFrameRate = 30; // 목표 30fps 고정
             Screen.orientation = ScreenOrientation.LandscapeLeft; // DepthSampler 의 축 변환 기준
-            if (CameraManager == null) CameraManager = FindFirstObjectByType<ARCameraManager>();
-            if (OcclusionManager == null) OcclusionManager = FindFirstObjectByType<AROcclusionManager>();
-            if (ImageManager == null) ImageManager = FindFirstObjectByType<ARTrackedImageManager>();
+            if (CameraManager == null) CameraManager = FindAnyObjectByType<ARCameraManager>();
+            if (OcclusionManager == null) OcclusionManager = FindAnyObjectByType<AROcclusionManager>();
+            if (ImageManager == null) ImageManager = FindAnyObjectByType<ARTrackedImageManager>();
             if (OcclusionManager != null)
             {
                 OcclusionManager.requestedEnvironmentDepthMode = UnityEngine.XR.ARSubsystems.EnvironmentDepthMode.Best;

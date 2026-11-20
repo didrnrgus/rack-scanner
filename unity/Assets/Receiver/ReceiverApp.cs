@@ -256,7 +256,7 @@ namespace RackScanner.Receiver
         {
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             if (!scene.Contains("Receiver")) return;
-            if (UnityEngine.Object.FindFirstObjectByType<ReceiverApp>() != null) return;
+            if (UnityEngine.Object.FindAnyObjectByType<ReceiverApp>() != null) return;
             new GameObject("ReceiverApp").AddComponent<ReceiverApp>();
         }
     }
