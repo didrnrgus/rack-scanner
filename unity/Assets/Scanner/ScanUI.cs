@@ -10,7 +10,7 @@ namespace RackScanner.Scanner
     public sealed class ScanUI : MonoBehaviour
     {
         ScannerApp _app;
-        string _port, _mw, _mh;
+        string _port, _mw, _mh, _voxel;
         bool _showSessions;
         Vector2 _scroll;
 
@@ -20,6 +20,7 @@ namespace RackScanner.Scanner
             _port = _app.PcPort.ToString();
             _mw = (_app.MarkerPrintedWidth * 100).ToString("F1");
             _mh = (_app.MarkerPrintedHeight * 100).ToString("F1");
+            _voxel = (_app.VoxelSize * 100).ToString("F1");
         }
 
         void OnGUI()
@@ -53,6 +54,11 @@ namespace RackScanner.Scanner
             _mw = GUILayout.TextField(_mw, GUILayout.Width(70));
             GUILayout.Label("×", GUILayout.Width(15));
             _mh = GUILayout.TextField(_mh, GUILayout.Width(70));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("복셀 cm", GUILayout.Width(80));
+            _voxel = GUILayout.TextField(_voxel, GUILayout.Width(70));
+            GUILayout.Label("작을수록 촘촘 (새 세션부터)");
             GUILayout.EndHorizontal();
 
             GUI.enabled = _app.State != ScannerApp.Phase.Scanning && _app.State != ScannerApp.Phase.Paused;
@@ -92,6 +98,7 @@ namespace RackScanner.Scanner
             if (int.TryParse(_port, out var p)) _app.PcPort = p;
             _app.MarkerPrintedWidth = ScannerApp.ParseFloat(_mw, _app.MarkerPrintedWidth * 100) / 100f;
             _app.MarkerPrintedHeight = ScannerApp.ParseFloat(_mh, _app.MarkerPrintedHeight * 100) / 100f;
+            _app.VoxelSize = ScannerApp.ParseFloat(_voxel, _app.VoxelSize * 100) / 100f;
         }
 
         static string C(bool ok) => ok ? "<color=#5f5>" : "<color=#f77>";

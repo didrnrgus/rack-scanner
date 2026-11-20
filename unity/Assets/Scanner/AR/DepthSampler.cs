@@ -23,12 +23,18 @@ namespace RackScanner.Scanner.AR
     /// <summary>
     /// 환경 깊이 + 신뢰도 + 카메라 내부 파라미터 + 카메라 포즈로 AR 세션 좌표의 점을 만든다.
     /// 신뢰도 높은 점만, PixelStep 간격으로.
-    /// TODO: Jobs/Burst 로 옮기기 (지금은 256×192 를 2픽셀 간격·3프레임마다라 메인 스레드로도 충분한지 M0 에서 측정).
+    /// TODO: Jobs/Burst 로 옮기기 (지금은 256×192 전체·3프레임마다를 메인 스레드에서 한다. FPS 가 떨어지면 옮긴다).
     /// </summary>
     public sealed class DepthSampler
     {
         public int PixelStep = 2;
-        public float MinDepth = 0.25f, MaxDepth = 4.0f;
+        /// <summary>LiDAR 오차는 거리에 따라 커진다. 물체를 정확히 찍으려고 3m 까지만 쓴다.</summary>
+        public float MinDepth = 0.25f, MaxDepth = 3.0f;
+        /// <summary>
+        /// 가장자리 번짐(flying pixel) 제거: 상하좌우 이웃과 깊이가 이 비율(d 대비)보다 크게 다르면 버린다.
+        /// 물체 경계에서 앞·뒤 깊이가 섞여 허공에 뜨는 점을 없앤다. 0 이면 끔.
+        /// </summary>
+        public float EdgeRelativeJump = 0.03f;
         /// <summary>ARKit 신뢰도: 0 낮음, 1 중간, 2 높음.</summary>
         public byte MinConfidence = 2;
         public bool SampleColor = true;
@@ -74,6 +80,7 @@ namespace RackScanner.Scanner.AR
                         if (hasConf && cData[v * cStride + u] < MinConfidence) continue;
                         float d = dData[v * dStride + u];
                         if (!(d >= MinDepth && d <= MaxDepth)) continue; // NaN 도 거름
+                        if (EdgeRelativeJump > 0f && IsDepthEdge(dData, dStride, w, h, u, v, d)) continue;
                         float x = (u + 0.5f - cx) * d / fx;
                         float y = (v + 0.5f - cy) * d / fy;
                         Vector3 local;
@@ -92,6 +99,16 @@ namespace RackScanner.Scanner.AR
                 }
                 finally { if (hasConf) conf.Dispose(); }
             }
+        }
+
+        bool IsDepthEdge(NativeArray<float> dData, int stride, int w, int h, int u, int v, float d)
+        {
+            float limit = d * EdgeRelativeJump;
+            if (u > 0 && !(Mathf.Abs(dData[v * stride + u - 1] - d) <= limit)) return true;      // NaN 이웃도 가장자리로 본다
+            if (u < w - 1 && !(Mathf.Abs(dData[v * stride + u + 1] - d) <= limit)) return true;
+            if (v > 0 && !(Mathf.Abs(dData[(v - 1) * stride + u] - d) <= limit)) return true;
+            if (v < h - 1 && !(Mathf.Abs(dData[(v + 1) * stride + u] - d) <= limit)) return true;
+            return false;
         }
 
         /// <summary>카메라 이미지를 깊이 해상도로 RGBA 변환 (같은 센서 방향·4:3 이라 픽셀이 대응).</summary>

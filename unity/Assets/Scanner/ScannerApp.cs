@@ -40,7 +40,10 @@ namespace RackScanner.Scanner
         public Vector3 MarkerUnityEuler = Vector3.zero;
 
         [Header("수집 (초기값, 측정 후 조정)")]
-        public float VoxelSize = 0.04f;
+        [Tooltip("아이패드 쪽 중복 제거 복셀 (m). 칸마다 첫 점만 남기므로 작을수록 촘촘하다. 앱 화면에서 바꿀 수 있고 새 세션부터 적용")]
+        public float VoxelSize = 0.02f;
+        [Tooltip("깊이 맵(256×192)을 몇 픽셀마다 읽을지. 1 = 전부")]
+        public int DepthPixelStep = 1;
         public int SampleEveryNFrames = 3;
         public int ChunkMaxPoints = 8000;
 
@@ -87,6 +90,7 @@ namespace RackScanner.Scanner
             PcHost = PlayerPrefs.GetString("pcHost", PcHost);
             MarkerPrintedWidth = PlayerPrefs.GetFloat("markerWidth", MarkerPrintedWidth);
             MarkerPrintedHeight = PlayerPrefs.GetFloat("markerHeight", MarkerPrintedHeight);
+            VoxelSize = PlayerPrefs.GetFloat("voxelSize", VoxelSize);
 
             Tracking = new TrackingGuard();
             Tracking.Changed += OnTrackingChanged;
@@ -100,7 +104,7 @@ namespace RackScanner.Scanner
                 Aligner.Marker = BuildMarkerDefinition();
                 Aligner.RequireRealign("마커 크기를 바꿨습니다. 마커를 다시 비춰 정렬하세요");
             };
-            Depth = new DepthSampler();
+            Depth = new DepthSampler { PixelStep = Mathf.Max(1, DepthPixelStep) };
             if (gameObject.GetComponent<ScanUI>() == null) gameObject.AddComponent<ScanUI>();
         }
 
@@ -192,6 +196,7 @@ namespace RackScanner.Scanner
             Store.SaveMeta(new SessionMeta { SessionId = SessionId, DeviceInfo = DeviceInfo(), Marker = marker });
             if (Aligner.LastAligned != null && Aligner.IsAligned) Store.Append(Aligner.LastAligned);
             if (connect) Connect(md);
+            VoxelSize = Mathf.Clamp(VoxelSize, 0.005f, 0.10f);
             _voxels = new VoxelSet(VoxelSize);
             _chunks = new ChunkBuilder { MaxPoints = ChunkMaxPoints };
             TotalPoints = 0;
@@ -199,6 +204,7 @@ namespace RackScanner.Scanner
             PlayerPrefs.SetString("pcHost", PcHost);
             PlayerPrefs.SetFloat("markerWidth", MarkerPrintedWidth);
             PlayerPrefs.SetFloat("markerHeight", MarkerPrintedHeight);
+            PlayerPrefs.SetFloat("voxelSize", VoxelSize);
         }
 
         void Connect(MarkerDefMessage md)

@@ -158,7 +158,7 @@ MonoBehaviour:
   MarkerLibraryWidth: 0.2
   MarkerUnityPosition: {x: 0, y: 0, z: 0}
   MarkerUnityEuler: {x: 0, y: 0, z: 0}
-  VoxelSize: 0.04
+  VoxelSize: 0.02
   SampleEveryNFrames: 3
   ChunkMaxPoints: 8000
   PcHost: 192.168.0.10
