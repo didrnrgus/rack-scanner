@@ -141,7 +141,15 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/app.xcarchive/Products/Applications/*.app Payload/
-          zip -qr app.ipa Payload
+          # 서명 없이 빌드하면 미리 서명된 Unity 프레임워크(UnityRuntime.framework)의 옛 서명이 그대로 남아,
+          # Sideloadly 가 다시 서명해도 설치 시 ApplicationVerificationFailed (0xe8008001) 가 난다. 남은 서명을 모두 지운다.
+          find Payload -type d -name _CodeSignature -prune -exec rm -rf {} +
+          find Payload -type f -name embedded.mobileprovision -delete
+          for bin in Payload/*.app/Frameworks/*.framework/*; do
+            [ -f "$bin" ] && file "$bin" | grep -q Mach-O && codesign --remove-signature "$bin" || true
+          done
+          codesign --remove-signature Payload/*.app/"$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' Payload/*.app/Info.plist)" || true
+          zip -qry app.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-ipa

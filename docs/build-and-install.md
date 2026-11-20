@@ -77,6 +77,8 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 4. Windows PC: iTunes·iCloud (Apple 사이트 버전, MS Store 버전 말고) 와 Sideloadly 설치, 아이패드 USB-C 연결,
    아이패드 설정 → 개인정보 보호 및 보안 → **개발자 모드** 켜기.
 5. Sideloadly 에 `.ipa` 를 넣고 설치 전용 무료 Apple ID 로 설치.
+   v0.1.0 은 `ApplicationVerificationFailed ... UnityRuntime.framework : 0xe8008001` 로 설치가 안 된다
+   (프레임워크에 Unity 의 옛 서명이 남아 있었음). 워크플로가 남은 서명을 지우도록 고친 v0.1.1 부터는 그대로 설치된다.
 6. **7일마다 만료**: 그 전에 아이패드 파일 앱 → 나의 iPad → (앱 이름) → `sessions/` 를 PC 로 백업하고(또는 앱에서 "PC로 재전송"),
    같은 Apple ID·번들 ID 로 다시 설치한다.
 
