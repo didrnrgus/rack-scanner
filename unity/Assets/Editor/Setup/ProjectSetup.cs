@@ -153,6 +153,7 @@ namespace RackScanner.EditorTools
 
         static XRReferenceImageLibrary SetupMarkerLibrary()
         {
+            ConfigureMarkerTexture();
             var existing = AssetDatabase.LoadAssetAtPath<XRReferenceImageLibrary>(MarkerLibrary);
             if (existing != null) return existing;
 
@@ -175,6 +176,48 @@ namespace RackScanner.EditorTools
             return lib;
         }
 
+        /// <summary>
+        /// 앱에서 입력한 cm 로 ARKit 마커 크기를 실행 중에 바꾸려면(MarkerLibrarySizer) 텍스처를 런타임에 읽을 수 있어야 한다:
+        /// Read/Write 켜고, ARKit 이 받는 RGBA32 무압축으로.
+        /// </summary>
+        static void ConfigureMarkerTexture()
+        {
+            var importer = AssetImporter.GetAtPath(MarkerTexture) as TextureImporter;
+            if (importer == null) return;
+            bool changed = false;
+            if (!importer.isReadable) { importer.isReadable = true; changed = true; }
+            if (importer.mipmapEnabled) { importer.mipmapEnabled = false; changed = true; }
+            if (importer.textureCompression != TextureImporterCompression.Uncompressed) { importer.textureCompression = TextureImporterCompression.Uncompressed; changed = true; }
+            var ios = importer.GetPlatformTextureSettings("iOS");
+            if (!ios.overridden || ios.format != TextureImporterFormat.RGBA32)
+            {
+                ios.overridden = true;
+                ios.format = TextureImporterFormat.RGBA32;
+                ios.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.SetPlatformTextureSettings(ios);
+                changed = true;
+            }
+            if (changed) importer.SaveAndReimport();
+        }
+
+        /// <summary>ScannerApp 에 마커 텍스처와 라이브러리 기본 폭을 넣는다. 바꿨으면 true.</summary>
+        static bool AssignScannerMarker()
+        {
+            var appType = Type.GetType("RackScanner.Scanner.ScannerApp, RackScanner.Scanner");
+            if (appType == null) return false;
+            var app = UnityEngine.Object.FindAnyObjectByType(appType);
+            if (app == null) return false;
+            var so = new SerializedObject(app);
+            var tex = so.FindProperty("MarkerTexture");
+            var width = so.FindProperty("MarkerLibraryWidth");
+            bool changed = false;
+            var texAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(MarkerTexture);
+            if (tex != null && tex.objectReferenceValue != texAsset) { tex.objectReferenceValue = texAsset; changed = true; }
+            if (width != null && !Mathf.Approximately(width.floatValue, MarkerSizeMeters)) { width.floatValue = MarkerSizeMeters; changed = true; }
+            if (changed) so.ApplyModifiedPropertiesWithoutUndo();
+            return changed;
+        }
+
         static void CreateReceiverScene()
         {
             string path = RackScannerScenes.Receiver;
@@ -195,8 +238,10 @@ namespace RackScanner.EditorTools
                 // 이미 있으면 새로 만들지 않고 마커 라이브러리 연결만 확인한다.
                 var existing = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
                 var manager = UnityEngine.Object.FindAnyObjectByType<ARTrackedImageManager>();
-                if (manager != null && AssignMarkerLibrary(manager)) EditorSceneManager.SaveScene(existing);
-                Debug.Log($"[RackScanner] {path} 가 이미 있어 마커 라이브러리 연결만 확인함");
+                bool libChanged = manager != null && AssignMarkerLibrary(manager);
+                bool appChanged = AssignScannerMarker();
+                if (libChanged || appChanged) EditorSceneManager.SaveScene(existing);
+                Debug.Log($"[RackScanner] {path} 가 이미 있어 마커 연결만 확인함 (라이브러리 {libChanged}, ScannerApp {appChanged})");
                 return;
             }
 
@@ -223,7 +268,7 @@ namespace RackScanner.EditorTools
             light.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
             var appType = Type.GetType("RackScanner.Scanner.ScannerApp, RackScanner.Scanner");
-            if (appType != null) new GameObject("ScannerApp", appType);
+            if (appType != null) { new GameObject("ScannerApp", appType); AssignScannerMarker(); }
             else Debug.LogWarning("[RackScanner] ScannerApp 타입을 찾지 못했습니다. 빈 GameObject 에 ScannerApp 을 직접 추가하세요.");
 
             Directory.CreateDirectory(Path.GetDirectoryName(path));

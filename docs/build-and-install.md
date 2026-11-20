@@ -50,8 +50,10 @@ Target minimum iOS 는 기본값 15.0. 아이패드 버전이 그보다 낮으�
   XR Origin 에 **AR Tracked Image Manager** (Reference Image Library = `MarkerLibrary`)
 - ScannerApp (ScanUI 는 자동으로 붙음)
 
-**마커 실측값 맞추기**: `marker_base_print.svg` 를 배율 100% 로 인쇄해 자로 잰다. 20 cm 가 아니면
-`MarkerLibrary.asset` 의 Physical Size(m) 와 앱의 "마커 cm" 를 같은 실측값으로 바꾼다.
+**마커 실측값 맞추기**: 인쇄(`marker_base_print.svg`, 배율 100%)하거나 모니터에 띄운 마커를 자로 재서 앱의 "마커 cm" 에 넣고
+**PC 연결 (새 세션)** 을 누른다. 앱이 그 크기로 ARKit 마커를 다시 등록하고(`MarkerLibrarySizer`, v0.1.2~) 재정렬을 요구한다.
+`MarkerLibrary.asset` 의 Physical Size(0.20 m) 는 기본값일 뿐이라 바꿀 필요 없다.
+(v0.1.1 까지는 입력값이 기록만 되고 ARKit 은 20 cm 로 계산해서, 크기가 다르면 재정렬마다 원점이 옮겨 가 점군이 겹쳐 번졌다.)
 
 ## 3-A. 맥북에서 직접 빌드
 

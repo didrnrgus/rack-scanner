@@ -154,6 +154,8 @@ MonoBehaviour:
   MarkerId: base
   MarkerPrintedWidth: 0.2
   MarkerPrintedHeight: 0.2
+  MarkerTexture: {fileID: 2800000, guid: 1b62584e6faa09641941496fe53cc640, type: 3}
+  MarkerLibraryWidth: 0.2
   MarkerUnityPosition: {x: 0, y: 0, z: 0}
   MarkerUnityEuler: {x: 0, y: 0, z: 0}
   VoxelSize: 0.04

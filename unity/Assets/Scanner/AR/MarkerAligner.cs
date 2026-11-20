@@ -41,17 +41,21 @@ namespace RackScanner.Scanner.AR
         readonly PoseAverager _avg = new PoseAverager();
         readonly AlignmentSmoother _smoother = new AlignmentSmoother();
         bool _needRealign;
-        float _sumDist, _sumAngle, _sumPitch, _sumRoll;
+        // 평균 창(_avg)과 같은 프레임의 통계. 창에서 빠진 프레임은 여기서도 빼야 로그 평균이 맞다.
+        // (예전에는 합계만 누적해서, 창에서 프레임이 빠질수록 거리·pitch 평균이 부풀었다: pitch 255° 같은 값)
+        readonly Queue<FrameStat> _stats = new Queue<FrameStat>();
+
+        struct FrameStat { public double Time; public float Dist, Angle, Pitch, Roll; }
 
         public MarkerAligner(MarkerDefinition marker) { Marker = marker; }
 
         /// <summary>추적이 끊겼다 돌아오면 호출: 마커를 다시 비춰 재정렬할 때까지 IsAligned=false.</summary>
-        public void RequireRealign()
+        public void RequireRealign(string hint = null)
         {
             _needRealign = true;
             _avg.Clear();
             ResetSums();
-            Hint = "추적이 복구됐습니다. 마커를 다시 비춰 재정렬하세요";
+            Hint = hint ?? "추적이 복구됐습니다. 마커를 다시 비춰 재정렬하세요";
         }
 
         public void Update(ARTrackedImageManager images, Transform cameraTransform, double time, float dt)
@@ -67,6 +71,7 @@ namespace RackScanner.Scanner.AR
                 }
             }
             _avg.DropOlderThan(time, Window);
+            while (_stats.Count > 0 && time - _stats.Peek().Time > Window) _stats.Dequeue();
             _smoother.Step(dt);
         }
 
@@ -85,18 +90,20 @@ namespace RackScanner.Scanner.AR
                 return;
             }
             _avg.Add(time, pos.ToNumerics(), nq);
-            _sumDist += dist; _sumAngle += viewAngle; _sumPitch += pitch; _sumRoll += roll;
+            _stats.Enqueue(new FrameStat { Time = time, Dist = dist, Angle = viewAngle, Pitch = pitch, Roll = roll });
             if (_avg.Count < MinFrames) { Hint = $"마커 인식 중 {_avg.Count}/{MinFrames}"; return; }
             if (_avg.PositionSpread() > MaxSpread) { Hint = "기기를 잠시 멈춰 주세요"; return; }
 
             var t = MarkerAlignment.ComputeArToUnity(_avg.MeanPosition(), _avg.MeanRotation(), Marker);
             _smoother.SetTarget(t);
-            int n = _avg.Count;
+            float sumDist = 0, sumAngle = 0, sumPitch = 0, sumRoll = 0;
+            foreach (var f in _stats) { sumDist += f.Dist; sumAngle += f.Angle; sumPitch += f.Pitch; sumRoll += f.Roll; }
+            int n = Mathf.Max(1, _stats.Count);
             LastAligned = new AlignedMessage
             {
                 MarkerId = Marker.Id,
-                Distance = _sumDist / n, ViewAngleDeg = _sumAngle / n, PitchDeg = _sumPitch / n, RollDeg = _sumRoll / n,
-                FrameCount = (ushort)n,
+                Distance = sumDist / n, ViewAngleDeg = sumAngle / n, PitchDeg = sumPitch / n, RollDeg = sumRoll / n,
+                FrameCount = (ushort)_avg.Count,
             };
             AlignCount++;
             _needRealign = false;
@@ -106,7 +113,7 @@ namespace RackScanner.Scanner.AR
             ResetSums();
         }
 
-        void ResetSums() { _sumDist = _sumAngle = _sumPitch = _sumRoll = 0; }
+        void ResetSums() { _stats.Clear(); }
     }
 }
 #endif

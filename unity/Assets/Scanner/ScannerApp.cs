@@ -32,6 +32,10 @@ namespace RackScanner.Scanner
         public string MarkerId = "base";
         public float MarkerPrintedWidth = 0.20f;
         public float MarkerPrintedHeight = 0.20f;
+        [Tooltip("MarkerLibrary 에 든 마커 이미지 (Read/Write 켜고 RGBA32). 입력한 cm 로 ARKit 마커 크기를 바꿀 때 쓴다")]
+        public Texture2D MarkerTexture;
+        [Tooltip("빌드에 든 MarkerLibrary 의 Physical Size (m). 입력값이 이와 다르면 실행 중에 바꿔 적용한다")]
+        public float MarkerLibraryWidth = 0.20f;
         public Vector3 MarkerUnityPosition = Vector3.zero;
         public Vector3 MarkerUnityEuler = Vector3.zero;
 
@@ -48,6 +52,7 @@ namespace RackScanner.Scanner
 
         internal TrackingGuard Tracking { get; private set; }
         internal MarkerAligner Aligner { get; private set; }
+        internal MarkerLibrarySizer MarkerSizer { get; private set; }
         internal DepthSampler Depth { get; private set; }
         internal NetSender Sender { get; private set; }
         internal LocalStore Store { get; private set; }
@@ -88,6 +93,13 @@ namespace RackScanner.Scanner
             Aligner = new MarkerAligner(BuildMarkerDefinition());
             Aligner.Logged += e => Store?.LogAlignment(e);
             Aligner.Aligned += OnAligned;
+            MarkerSizer = new MarkerLibrarySizer(ImageManager, MarkerTexture, MarkerId, MarkerLibraryWidth);
+            MarkerSizer.Applied += _ =>
+            {
+                // 이전 크기로 한 정렬은 원점이 틀렸으므로 버리고 다시 정렬한다.
+                Aligner.Marker = BuildMarkerDefinition();
+                Aligner.RequireRealign("마커 크기를 바꿨습니다. 마커를 다시 비춰 정렬하세요");
+            };
             Depth = new DepthSampler();
             if (gameObject.GetComponent<ScanUI>() == null) gameObject.AddComponent<ScanUI>();
         }
@@ -113,6 +125,7 @@ namespace RackScanner.Scanner
             FrameCount++;
             Fps = Mathf.Lerp(Fps, 1f / Mathf.Max(1e-4f, Time.unscaledDeltaTime), 0.05f);
             Tracking.Update();
+            MarkerSizer.Update(MarkerPrintedWidth);
             Aligner.Update(ImageManager, _camTransform, Time.realtimeSinceStartupAsDouble, Time.deltaTime);
             if (Tracking.IsNormal && Tracking.LostSinceAlign && Aligner.IsAligned)
             {

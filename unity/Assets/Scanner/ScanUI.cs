@@ -39,6 +39,7 @@ namespace RackScanner.Scanner
             GUILayout.Label($"상태: {_app.State} · 점 {_app.TotalPoints:N0} · {_app.Fps:F0}fps · 프레임 {_app.FrameCount}");
             if (_app.SessionId != null) GUILayout.Label($"세션: {_app.SessionId}");
             if (!string.IsNullOrEmpty(_app.Message)) GUILayout.Label(_app.Message, rich);
+            if (!string.IsNullOrEmpty(_app.MarkerSizer.Status)) GUILayout.Label(_app.MarkerSizer.Status);
             if (!string.IsNullOrEmpty(_app.Depth.LastError)) GUILayout.Label("깊이: " + _app.Depth.LastError);
 
             GUILayout.Space(8);
