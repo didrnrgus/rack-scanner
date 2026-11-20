@@ -2,7 +2,10 @@
     "name": "RackScanner.Scanner",
     "rootNamespace": "RackScanner.Scanner",
     "references": [
-        "RackScanner.Shared"
+        "RackScanner.Shared",
+        "Unity.XR.ARFoundation",
+        "Unity.XR.ARSubsystems",
+        "Unity.XR.CoreUtils"
     ],
     "includePlatforms": [
         "Editor",

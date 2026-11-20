@@ -9,32 +9,49 @@
 - [ ] 맥북 macOS / Xcode 버전, 그 Xcode 가 아이패드의 iPadOS 를 인식하는지 (2017 맥북프로: Ventura 13, Xcode 15.2 근처가 상한으로 알려짐 — 확인 필요)
 - [ ] 세 기기 모두 Unity 6.6 (6000.6.8f1) 설치 가능 여부 (인텔 맥북 포함)
 
-## 1. Unity 프로젝트 열기 (최초 1회, 한 사람만)
+## 1. Unity 프로젝트 열기
 
-레포에는 `unity/Assets` 의 코드만 있고 `ProjectSettings/`, `Packages/` 는 아직 없다.
+`ProjectSettings/`, `Packages/`, 씬, `.meta` 는 레포에 커밋되어 있다. 새 기기에서는 열기만 하면 된다.
 
 1. Unity Hub → **Add → Add project from disk** → `unity/` 폴더 선택 → **Unity 6000.6.8f1** 로 연다 (다른 버전으로 열면 ProjectVersion.txt 가 바뀌니 주의).
-   (`ProjectSettings/`, `Packages/manifest.json` 이 생성된다.)
-2. Package Manager 에서 설치: **AR Foundation**, **Apple ARKit XR Plugin** (6.x). 설치되면 `RS_ARFOUNDATION` 이 켜져 Scanner 의 AR 코드가 컴파일된다.
-3. `unity/Assets/Scanner/RackScanner.Scanner.asmdef` 의 References 에 추가:
-   `Unity.XR.ARFoundation`, `Unity.XR.ARSubsystems`, `Unity.XR.CoreUtils` (안 하면 패키지 설치 직후 Scanner 컴파일 에러가 난다).
-4. Project Settings → XR Plug-in Management → iOS 탭 → **ARKit** 체크.
-5. Player Settings → Active Input Handling 을 **Both** 로 (PC 앱의 궤도 카메라가 구 Input Manager 를 씀).
-6. Player Settings (iOS) → Bundle Identifier 를 정하고 고정 (7일마다 같은 번들 ID 로 재설치), Target minimum iOS 는 아이패드 버전 이하.
-7. `ProjectSettings/`, `Packages/`, 생성된 `.meta` 파일을 **모두 커밋**한다. 특히 `ProjectSettings/ProjectVersion.txt` (버전 고정).
+2. 패키지는 `Packages/manifest.json` 에 고정되어 있어 자동으로 받는다 (모두 Unity 6.6 번들 버전).
 
-## 2. 씬 만들기
+| 패키지 | 버전 | 용도 |
+| --- | --- | --- |
+| AR Foundation / Apple ARKit XR Plugin | 6.6.2 | 아이패드 스캔. 설치되면 `RS_ARFOUNDATION` 이 켜져 Scanner 의 AR 코드가 컴파일된다 |
+| Input System | 1.20.1 | AR 카메라의 TrackedPoseDriver |
+| Universal RP | 17.6.0 | 렌더 파이프라인 (URP) |
+| MCP Unity (`com.gamelovers.mcp-unity`) | git (packages-lock 에 고정) | 에디터 원격 조작 (에이전트용). 포트 **8091** (`ProjectSettings/McpUnitySettings.json`) — 8090 은 다른 프로젝트 에디터와 겹친다 |
 
-**Receiver (PC)**: 메뉴 **RackScanner → Create Receiver Scene** 한 번. (`Assets/Receiver/Scenes/Receiver.unity`, ReceiverApp 은 실행 시 자동 생성)
+### 처음 한 번 한 설정 (기록용, 다시 할 필요 없음)
 
-**Scanner (아이패드)**: `Assets/Scanner/Scenes/Scanner.unity` 를 새로 만들고
-1. Hierarchy → XR → **AR Session**
-2. Hierarchy → XR → **XR Origin (Mobile AR)** (기본 Main Camera 는 삭제)
-3. XR Origin 의 AR Camera 에 **AR Occlusion Manager** 추가
-4. XR Origin 에 **AR Tracked Image Manager** 추가, Reference Image Library 를 만들어 연결:
-   Create → XR → Reference Image Library → `tools/make_marker.py` 로 만든 `marker_base.png` 추가,
-   이름 `base`, **Specify Size 켜고 Physical Size 에 인쇄 실측값(m)**. 앱의 "마커 cm" 와 같은 값이어야 한다.
-5. 빈 GameObject 에 **ScannerApp** 컴포넌트 추가 (ScanUI 는 자동으로 붙음)
+메뉴 **RackScanner → Setup Project (Player, XR, Scenes)** (`Assets/Editor/Setup/ProjectSetup.cs`) 가 아래를 한 번에 한다.
+여러 번 눌러도 되고, 이미 있는 씬·에셋은 덮어쓰지 않는다 (Scanner 씬은 마커 라이브러리 연결만 다시 확인). 설정이 꼬였을 때 다시 눌러 맞출 수 있다.
+대화상자 없이 콘솔에만 결과를 남기므로 MCP 의 `execute_menu_item` 으로도 실행할 수 있다.
+
+- Player: Product Name `RackScanner`, iOS Bundle Identifier `com.didrnrgus.rackscanner` (TODO: 확정. 정하면 바꾸지 않는다 — 7일마다 같은 번들 ID 로 재설치),
+  카메라 사용 문구, 기본 방향 LandscapeLeft, Run In Background, **Active Input Handling = Both** (PC 앱 궤도 카메라가 구 Input Manager 를 씀. 바뀌면 에디터 재시작).
+- URP: `Assets/Settings/URP.asset` + `URP_Renderer.asset` 을 만들어 Graphics 기본 파이프라인으로 지정.
+  렌더러에 **AR Background Renderer Feature** 를 넣는다 (URP 에서는 이것이 없으면 아이패드 카메라 화면이 검게 나온다).
+- XR Plug-in Management → iOS → **ARKit** 로더 지정 (`Assets/XR/`). PC(Standalone) 는 XR 없음.
+- 마커: `Assets/Scanner/Markers/marker_base.png` (`tools/make_marker.py --id base --size-cm 20` 결과, 인쇄용 `marker_base_print.svg` 도 같이 있음) 로
+  `MarkerLibrary.asset` (이름 `base`, Physical Size 0.20 m) 을 만든다.
+- 씬 2개를 만든다 (아래).
+
+Target minimum iOS 는 기본값 15.0. 아이패드 버전이 그보다 낮으면 Player Settings (iOS) 에서 내린다.
+
+## 2. 씬
+
+**Receiver (PC)**: `Assets/Receiver/Scenes/Receiver.unity` — ReceiverApp 하나 (없어도 실행 시 자동 생성).
+
+**Scanner (아이패드)**: `Assets/Scanner/Scenes/Scanner.unity`
+- AR Session (+ AR Input Manager)
+- XR Origin (Mobile AR): Main Camera 에 AR Camera Manager / AR Camera Background / TrackedPoseDriver / **AR Occlusion Manager**,
+  XR Origin 에 **AR Tracked Image Manager** (Reference Image Library = `MarkerLibrary`)
+- ScannerApp (ScanUI 는 자동으로 붙음)
+
+**마커 실측값 맞추기**: `marker_base_print.svg` 를 배율 100% 로 인쇄해 자로 잰다. 20 cm 가 아니면
+`MarkerLibrary.asset` 의 Physical Size(m) 와 앱의 "마커 cm" 를 같은 실측값으로 바꾼다.
 
 ## 3-A. 맥북에서 직접 빌드
 
@@ -45,6 +62,8 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 
 1. 시크릿 등록 (레포 Settings → Secrets → Actions): `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD`
    (Personal 라이선스 활성화 파일 만드는 법은 GameCI 문서 "Activation" 참고).
+   `UNITY_LICENSE` 에는 Unity Hub 로 Personal 라이선스를 활성화한 PC 의 `C:\ProgramData\Unity\Unity_lic.ulf` 내용 전체를 넣는다.
+   최근 Hub 는 `%LOCALAPPDATA%\Unity\licenses\UnityEntitlementLicense.xml` 만 만들기도 한다 (TODO: 이 파일을 GameCI 가 받는지 첫 실행에서 확인).
 2. main 에 푸시하면 **Build iOS (unsigned ipa)** 가 자동으로 돈다 (`docs/`, `*.md`, `tests/`, `tools/`, `samples/` 만 바뀐 푸시는 건너뜀).
    버전은 마지막 `vX.Y.Z` 태그에서 patch 를 자동으로 +1 한다 (태그가 없으면 `v0.1.0`). 직접 올릴 필요 없다.
    minor/major 를 올리려면 Actions → Run workflow 에서 `bump` 를 골라 main 으로 수동 실행한다.
