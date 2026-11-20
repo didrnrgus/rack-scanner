@@ -21,7 +21,7 @@ namespace RackScanner.Receiver
     public sealed class ReceiverApp : MonoBehaviour
     {
         public int Port = ProtocolConstants.DefaultPort;
-        [Tooltip("PC 누적 복셀 크기 (m)")] public float AccumulateVoxel = 0.01f;
+        [Tooltip("PC 누적 복셀 크기 (m). 같은 칸의 점을 평균해 points.ply 로 저장한다. 1mm 면 사실상 받은 점 그대로 (아이패드 원본 모드용)")] public float AccumulateVoxel = 0.001f;
 
         ScanServer _server;
         ScanSession _session;

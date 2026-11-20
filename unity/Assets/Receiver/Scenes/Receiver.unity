@@ -149,7 +149,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: RackScanner.Receiver::RackScanner.Receiver.ReceiverApp
   Port: 47800
-  AccumulateVoxel: 0.01
+  AccumulateVoxel: 0.001
 --- !u!4 &933131915
 Transform:
   m_ObjectHideFlags: 0

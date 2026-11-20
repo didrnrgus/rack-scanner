@@ -44,6 +44,9 @@ namespace RackScanner.Scanner
         public float VoxelSize = 0.02f;
         [Tooltip("깊이 맵(256×192)을 몇 픽셀마다 읽을지. 1 = 전부")]
         public int DepthPixelStep = 1;
+        [Tooltip("원본 모드: ARKit 깊이 맵을 가공 없이 보낸다 (시간 평활화·복셀·가장자리 필터·컬러 끔, 거리 5m 까지). 점이 많아 RawSampleEveryNFrames 마다 한 프레임만")]
+        public bool RawMode = true;
+        public int RawSampleEveryNFrames = 30;
         public int SampleEveryNFrames = 3;
         public int ChunkMaxPoints = 8000;
 
@@ -91,6 +94,7 @@ namespace RackScanner.Scanner
             MarkerPrintedWidth = PlayerPrefs.GetFloat("markerWidth", MarkerPrintedWidth);
             MarkerPrintedHeight = PlayerPrefs.GetFloat("markerHeight", MarkerPrintedHeight);
             VoxelSize = PlayerPrefs.GetFloat("voxelSize", VoxelSize);
+            RawMode = PlayerPrefs.GetInt("rawMode", RawMode ? 1 : 0) != 0;
 
             Tracking = new TrackingGuard();
             Tracking.Changed += OnTrackingChanged;
@@ -105,6 +109,7 @@ namespace RackScanner.Scanner
                 Aligner.RequireRealign("마커 크기를 바꿨습니다. 마커를 다시 비춰 정렬하세요");
             };
             Depth = new DepthSampler { PixelStep = Mathf.Max(1, DepthPixelStep) };
+            ApplyCaptureMode();
             if (gameObject.GetComponent<ScanUI>() == null) gameObject.AddComponent<ScanUI>();
         }
 
@@ -137,7 +142,8 @@ namespace RackScanner.Scanner
                 Aligner.RequireRealign();
             }
 
-            if (State == Phase.Scanning && Tracking.IsNormal && Aligner.IsAligned && FrameCount % Mathf.Max(1, SampleEveryNFrames) == 0)
+            int every = RawMode ? RawSampleEveryNFrames : SampleEveryNFrames;
+            if (State == Phase.Scanning && Tracking.IsNormal && Aligner.IsAligned && FrameCount % Mathf.Max(1, every) == 0)
                 Collect();
 
             if (_chunks != null)
@@ -159,8 +165,25 @@ namespace RackScanner.Scanner
             {
                 var q = t.Apply(p.ToNumerics()); // AR 세션 좌표 → 마커 기준 Unity 좌표
                 var pt = new PointXYZRGB(q, c.r, c.g, c.b);
-                if (_voxels.TryAdd(pt)) _chunks.Add(pt, now);
+                if (RawMode || _voxels.TryAdd(pt)) _chunks.Add(pt, now);
             }
+        }
+
+        /// <summary>원본 모드 켜기/끄기. 촬영 중에는 바꾸지 않는다.</summary>
+        internal void SetRawMode(bool raw)
+        {
+            if (State == Phase.Scanning || State == Phase.Paused) return;
+            RawMode = raw;
+            PlayerPrefs.SetInt("rawMode", raw ? 1 : 0);
+            ApplyCaptureMode();
+        }
+
+        void ApplyCaptureMode()
+        {
+            if (OcclusionManager != null) OcclusionManager.environmentDepthTemporalSmoothingRequested = !RawMode;
+            Depth.EdgeRelativeJump = RawMode ? 0f : 0.03f;
+            Depth.SampleColor = !RawMode;
+            Depth.MaxDepth = RawMode ? 5f : 3f;
         }
 
         void Emit(PointChunkMessage chunk)

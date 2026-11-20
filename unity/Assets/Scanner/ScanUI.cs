@@ -81,6 +81,10 @@ namespace RackScanner.Scanner
             GUILayout.EndHorizontal();
             GUI.enabled = true;
 
+            GUI.enabled = _app.State != ScannerApp.Phase.Scanning && _app.State != ScannerApp.Phase.Paused;
+            if (GUILayout.Button(_app.RawMode ? "원본 모드: 켬 (가공 없음·컬러 없음·1초 1프레임)" : "원본 모드: 끔 (복셀·필터·컬러)", GUILayout.Height(40)))
+                _app.SetRawMode(!_app.RawMode);
+            GUI.enabled = true;
             if (GUILayout.Button($"깊이 축: {_app.Depth.Axes} (기기 확인용)")) _app.Depth.Axes = (DepthAxes)(((int)_app.Depth.Axes + 1) % 4);
             if (GUILayout.Button(_showSessions ? "세션 목록 닫기" : "저장된 세션 (PC로 재전송)")) _showSessions = !_showSessions;
             if (_showSessions)
