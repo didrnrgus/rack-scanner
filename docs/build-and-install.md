@@ -7,13 +7,13 @@
 
 - [ ] 아이패드 iPadOS 버전 (설정 → 일반 → 정보)
 - [ ] 맥북 macOS / Xcode 버전, 그 Xcode 가 아이패드의 iPadOS 를 인식하는지 (2017 맥북프로: Ventura 13, Xcode 15.2 근처가 상한으로 알려짐 — 확인 필요)
-- [ ] 세 기기 모두 같은 Unity 6 버전 설치 가능 여부 (인텔 맥북 포함)
+- [ ] 세 기기 모두 Unity 6.6 (6000.6.8f1) 설치 가능 여부 (인텔 맥북 포함)
 
 ## 1. Unity 프로젝트 열기 (최초 1회, 한 사람만)
 
 레포에는 `unity/Assets` 의 코드만 있고 `ProjectSettings/`, `Packages/` 는 아직 없다.
 
-1. Unity Hub → **Add → Add project from disk** → `unity/` 폴더 선택 → Unity 6 버전으로 연다.
+1. Unity Hub → **Add → Add project from disk** → `unity/` 폴더 선택 → **Unity 6000.6.8f1** 로 연다 (다른 버전으로 열면 ProjectVersion.txt 가 바뀌니 주의).
    (`ProjectSettings/`, `Packages/manifest.json` 이 생성된다.)
 2. Package Manager 에서 설치: **AR Foundation**, **Apple ARKit XR Plugin** (6.x). 설치되면 `RS_ARFOUNDATION` 이 켜져 Scanner 의 AR 코드가 컴파일된다.
 3. `unity/Assets/Scanner/RackScanner.Scanner.asmdef` 의 References 에 추가:
@@ -64,8 +64,9 @@ Signing 에 무료 Apple ID 팀 선택 → 아이패드 연결 후 Run.
 
 ## 4. PC 앱 (Windows)
 
-Unity 에서 **RackScanner → Build → Windows** → `unity/Builds/Windows/RackReceiver.exe`. 또는 에디터에서 Receiver 씬을 Play.
-- 처음 실행 때 Windows 방화벽에서 **개인 네트워크 허용**.
+기본은 **빌드하지 않고 에디터에서 Receiver 씬을 Play** 해서 쓴다 (GitHub Actions 는 아이패드용 iOS 만 빌드한다).
+따로 실행 파일이 필요할 때만 **RackScanner → Build → Windows** → `unity/Builds/Windows/RackReceiver.exe`.
+- 처음 실행 때 Windows 방화벽에서 **개인 네트워크 허용** (에디터로 돌리면 Unity Editor 에 대해 허용).
 - 화면 왼쪽 위에 표시되는 PC 주소를 아이패드 앱의 "PC 주소" 에 입력.
 - 세션은 실행 파일 옆(에디터에서는 `unity/sessions/`)에 저장된다. git 에는 올라가지 않는다.
 

@@ -60,7 +60,7 @@ Nov 18, 2026 · @양국현
 | --- | --- | --- |
 | 맥북 macOS / Xcode | 2017 맥북프로는 정식으로 macOS Ventura 13까지 지원되고, 쓸 수 있는 Xcode는 15.2 정도가 상한으로 알고 있음 | 확인 필요 |
 | 아이패드 iPadOS | 맥북의 Xcode가 인식하는 범위 안에 있어야 디버그 설치 가능 | 설정 → 일반 → 정보에서 확인 |
-| Unity | 세 기기 모두 같은 Unity 6 버전으로 고정 (ProjectVersion.txt 커밋) | 인텔 맥북에서 설치 가능한지 확인 필요 |
+| Unity | 세 기기 모두 Unity 6.6 (6000.6.8f1) 으로 고정 (ProjectVersion.txt 커밋) | 인텔 맥북에서 설치 가능한지 확인 필요 |
 | Unity 패키지 | AR Foundation, Apple ARKit XR Plugin | 버전 고정 |
 | Apple 계정 | 무료 Apple ID 사용(유료 계정은 쓰지 않음). 설치한 앱이 7일마다 만료되어 Sideloadly로 재설치 | 앱 설치 전용 계정을 따로 만들어 쓰는 것을 권장 |
 | 네트워크 | 아이패드와 PC가 같은 공유기, 5GHz 권장. iOS의 로컬 네트워크 권한 허용 필요 | Info.plist에 사용 이유 문구 추가 |
@@ -491,7 +491,7 @@ jobs:
 
 **사람이 할 일 (에이전트는 하지 않음)**
 
-- [ ] Unity Hub에서 Unity 6 프로젝트를 unity/ 에 만들고, AR Foundation과 Apple ARKit XR Plugin을 설치하기
+- [ ] Unity Hub에서 Unity 6.6 (6000.6.8f1) 프로젝트를 unity/ 에 만들고, AR Foundation과 Apple ARKit XR Plugin을 설치하기
 - [ ] iOS 빌드 설정에서 카메라 사용 이유와 로컬 네트워크 사용 이유를 Info.plist에 넣기
 - [ ] Unity 라이선스 활성화 파일을 만들어 GitHub 시크릿 UNITY\_LICENSE, UNITY\_EMAIL, UNITY\_PASSWORD로 등록하기
 - [ ] 설치 전용 무료 Apple ID 준비, Windows PC에 iTunes·iCloud(Apple 사이트 버전)와 Sideloadly 설치, 아이패드 개발자 모드 켜기
