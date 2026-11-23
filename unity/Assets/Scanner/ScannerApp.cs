@@ -284,7 +284,8 @@ namespace RackScanner.Scanner
         {
             if (OcclusionManager != null) OcclusionManager.environmentDepthTemporalSmoothingRequested = !RawMode;
             Depth.EdgeRelativeJump = RawMode ? 0f : 0.03f;
-            Depth.SampleColor = !RawMode;
+            // 카메라 색은 원본 모드에서도 받는다: 깊이(모양)는 바꾸지 않고, PC 가 메쉬에 색을 입히는 데 쓴다 (1초 1프레임이라 변환 비용도 작다)
+            Depth.SampleColor = true;
             Depth.MaxDepth = RawMode ? 5f : 3f;
         }
 

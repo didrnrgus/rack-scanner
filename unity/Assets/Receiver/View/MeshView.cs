@@ -9,7 +9,7 @@ namespace RackScanner.Receiver.View
     /// <summary>
     /// 스캔 메쉬 표시. 두 가지 모드:
     /// - 블록: 받는 대로 ARKit 블록마다 오브젝트 하나 (실시간 확인용, 원래 밀도)
-    /// - 합친 메쉬: 단순화 결과 같은 메쉬 하나 (블록 표시는 숨김)
+    /// - 합친 메쉬: 다듬기·단순화 결과 같은 메쉬 하나 (블록 표시는 숨김). 정점 색(카메라 색)이 있으면 그 색으로 그릴 수 있다.
     /// 와이어프레임을 켜면 삼각형 엣지를 선으로 겹쳐 그려 넓은 면이 얼마나 합쳐졌는지 보인다.
     /// 좌표는 마커 기준 Unity 좌표 그대로 (변환 없음).
     /// </summary>
@@ -22,7 +22,7 @@ namespace RackScanner.Receiver.View
             public int[] Indices;
         }
 
-        Material _surface, _wire;
+        Material _surface, _surfaceColored, _wire;
         readonly Dictionary<uint, Item> _blocks = new Dictionary<uint, Item>();
         Item _merged;
         Transform _blockRoot;
@@ -36,6 +36,8 @@ namespace RackScanner.Receiver.View
             var shader = Shader.Find("RackScanner/Mesh");
             if (shader == null) { Debug.LogError("RackScanner/Mesh shader not found"); shader = Shader.Find("Sprites/Default"); }
             _surface = new Material(shader);
+            _surfaceColored = new Material(shader);
+            _surfaceColored.SetFloat("_VertexColor", 1f);
             _wire = PointCloudView.CreateVertexColorMaterial();
             _wire.SetColor("_Tint", new Color(0.05f, 0.05f, 0.08f, 1f));
             _blockRoot = new GameObject("Blocks").transform;
@@ -65,13 +67,19 @@ namespace RackScanner.Receiver.View
             _blocks[b.BlockId] = it;
         }
 
-        /// <summary>합친(단순화한) 메쉬를 보여주고 블록 표시는 숨긴다.</summary>
-        public void ShowMerged(IndexedMesh m)
+        /// <summary>합친(다듬은·단순화한) 메쉬를 보여주고 블록 표시는 숨긴다. useColors 이고 정점 색이 있으면 카메라 색으로 그린다.</summary>
+        public void ShowMerged(IndexedMesh m, bool useColors = true)
         {
             ClearMerged();
             var v = new Vector3[m.VertexCount];
             for (int i = 0; i < v.Length; i++) v[i] = new Vector3(m.Vertices[i].X, m.Vertices[i].Y, m.Vertices[i].Z);
-            _merged = Build("merged", v, m.Indices.ToArray(), transform);
+            Color32[] cols = null;
+            if (useColors && m.HasColors)
+            {
+                cols = new Color32[v.Length];
+                for (int i = 0; i < cols.Length; i++) { var c = m.Colors[i]; cols[i] = new Color32(c.R, c.G, c.B, 255); }
+            }
+            _merged = Build("merged", v, m.Indices.ToArray(), transform, cols);
             _blockRoot.gameObject.SetActive(false);
         }
 
@@ -115,17 +123,18 @@ namespace RackScanner.Receiver.View
             it.Wire = null;
         }
 
-        Item Build(string name, Vector3[] v, int[] idx, Transform parent)
+        Item Build(string name, Vector3[] v, int[] idx, Transform parent, Color32[] colors = null)
         {
             var mesh = new Mesh { name = name, indexFormat = IndexFormat.UInt32 };
             mesh.vertices = v;
+            if (colors != null) mesh.colors32 = colors;
             mesh.SetIndices(idx, MeshTopology.Triangles, 0);
             mesh.RecalculateBounds();
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = _surface;
+            mr.sharedMaterial = colors != null ? _surfaceColored : _surface;
             mr.shadowCastingMode = ShadowCastingMode.Off;
             var it = new Item { Surface = go, Vertices = v, Indices = idx };
             UpdateWire(it, parent);
@@ -141,7 +150,7 @@ namespace RackScanner.Receiver.View
             }
             if (it.Wire != null) return;
             // 삼각형 엣지를 중복 없이 선으로
-            var seen = new HashSet<long>();
+            var seen = new HashSet<long>(EdgeKeyComparer.Instance);
             var lines = new List<int>(it.Indices.Length * 2);
             for (int t = 0; t + 2 < it.Indices.Length; t += 3)
                 for (int k = 0; k < 3; k++)

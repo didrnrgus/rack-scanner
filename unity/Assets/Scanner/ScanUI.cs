@@ -87,7 +87,7 @@ namespace RackScanner.Scanner
             // 오른쪽 열: 수집·표시 설정과 저장된 세션 (왼쪽 열이 화면 높이를 넘지 않게 나눔)
             GUILayout.BeginArea(new Rect(440, 10, 420, 700), GUI.skin.box);
             GUI.enabled = _app.State != ScannerApp.Phase.Scanning && _app.State != ScannerApp.Phase.Paused;
-            if (GUILayout.Button(_app.RawMode ? "원본 모드: 켬 (가공 없음·컬러 없음·1초 1프레임)" : "원본 모드: 끔 (복셀·필터·컬러)", GUILayout.Height(40)))
+            if (GUILayout.Button(_app.RawMode ? "원본 모드: 켬 (가공 없음·컬러·1초 1프레임)" : "원본 모드: 끔 (복셀·필터·컬러)", GUILayout.Height(40)))
                 _app.SetRawMode(!_app.RawMode);
             if (GUILayout.Button(_app.MeshCapture ? "메쉬 수집: 켬 (LiDAR 메쉬도 PC로)" : "메쉬 수집: 끔 (점군만)", GUILayout.Height(40)))
                 _app.SetMeshCapture(!_app.MeshCapture);

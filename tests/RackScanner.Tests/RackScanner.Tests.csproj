@@ -19,6 +19,9 @@
   <ItemGroup>
     <Compile Include="*.cs" />
     <Compile Include="../../tools/AnalysisCli/SyntheticScene.cs" Link="SyntheticScene.cs" />
+    <Compile Include="../../tools/AnalysisCli/SyntheticMesh.cs" Link="SyntheticMesh.cs" />
+    <Compile Include="../../tools/AnalysisCli/SyntheticRefine.cs" Link="SyntheticRefine.cs" />
+    <Compile Include="../../tools/AnalysisCli/MeshCompare.cs" Link="MeshCompare.cs" />
     <Compile Include="../../unity/Assets/Shared/**/*.cs" LinkBase="Shared" />
     <Compile Include="../../unity/Assets/Analysis/**/*.cs" LinkBase="Analysis" />
     <Compile Include="../../unity/Assets/Scanner/Net/**/*.cs" LinkBase="Scanner/Net" />
