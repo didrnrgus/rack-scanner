@@ -13,6 +13,10 @@ namespace RackScanner.Shared.Mesh
     {
         public List<Vector3> Vertices = new List<Vector3>();
         public List<int> Indices = new List<int>();
+        /// <summary>정점 색 (Vertices 와 같은 길이). 없으면 null. 위치를 바꾸는 처리(합치기·잡음 제거·단순화·다듬기)는 색을 버리므로 끝에 MeshColorizer 로 다시 입힌다.</summary>
+        public List<Rgb24> Colors;
+
+        public bool HasColors => Colors != null && Colors.Count == Vertices.Count;
 
         public int VertexCount => Vertices.Count;
         public int TriangleCount => Indices.Count / 3;
@@ -69,5 +73,13 @@ namespace RackScanner.Shared.Mesh
         }
 
         static bool IsFinite(Vector3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
+    }
+
+    /// <summary>8비트 RGB 색.</summary>
+    public struct Rgb24
+    {
+        public byte R, G, B;
+        public Rgb24(byte r, byte g, byte b) { R = r; G = g; B = b; }
+        public override string ToString() => $"#{R:X2}{G:X2}{B:X2}";
     }
 }

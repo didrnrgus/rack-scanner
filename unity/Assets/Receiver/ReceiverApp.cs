@@ -41,16 +41,20 @@ namespace RackScanner.Receiver
         float MergeSize => MergeSizes[_mergeIdx];
         ScanSession _session;
         PointCloudView _cloud;
-        // 메쉬: 받는 동안은 블록 그대로, 단순화를 고르면 합친 메쉬 하나로 바꿔 보여주고 mesh.obj 로 저장한다
+        // 메쉬: 받는 동안은 블록 그대로. 촬영완료·불러오기·단계 변경 시 MeshPipeline(점으로 다듬기 → 단순화, 카메라 색)을
+        // 백그라운드로 돌려 합친 메쉬 하나로 보여주고 mesh_raw.obj(색)·mesh_refined.obj·mesh.obj 로 저장한다
         MeshView _meshView;
         static readonly float[] SimplifyErrors = { 0f, 0.002f, 0.005f, 0.01f };
         static readonly string[] SimplifyLabels = { "원본", "2mm", "5mm", "1cm" };
         int _simplifyIdx = 2;
         bool _showPoints = true, _showMesh = true, _wireframe;
-        Task<IndexedMesh> _simplify;
-        string _simplifyDir;
-        int _simplifySrcTris;
-        float _simplifyErr;
+        bool _refineMesh = true, _meshColors = true;
+        Task<MeshPipeline> _meshTask;
+        bool _meshTaskFull;        // 다듬기부터 다시 했나 (아니면 단순화만)
+        string _meshTaskDir;       // 끝나면 저장할 세션 폴더 (저장 전 수신 중이면 null)
+        MeshPipeline _pipeline;    // 마지막 결과. 원본 메쉬나 다듬기 설정이 바뀌면 null
+        bool _pipelineRefined;
+        int _meshGen, _meshTaskGen;  // 원본이 바뀔 때마다 올린다. 처리 중에 바뀌면 끝난 결과는 버린다
         IndexedMesh _loadedMesh;   // 불러온 세션의 mesh_raw.obj
         string _loadedDir;
         string _meshStatus = "";
@@ -137,24 +141,44 @@ namespace RackScanner.Receiver
                 }
                 _analysis = null;
             }
-            if (_simplify != null && _simplify.IsCompleted)
+            if (_meshTask != null && _meshTask.IsCompleted)
             {
-                if (_simplify.IsFaulted) Log("메쉬 단순화 실패: " + _simplify.Exception?.GetBaseException().Message);
+                if (_meshTask.IsFaulted) Log("메쉬 처리 실패: " + _meshTask.Exception?.GetBaseException().Message);
+                else if (_meshTaskGen != _meshGen) { /* 처리하는 동안 새 블록이 왔거나 다른 세션을 열었다: 옛 결과는 버린다 */ }
                 else
                 {
-                    var m = _simplify.Result;
-                    _meshView.ShowMerged(m);
-                    double pct = _simplifySrcTris > 0 ? 100.0 * m.TriangleCount / _simplifySrcTris : 0;
-                    _meshStatus = $"단순화 {_simplifyErr * 1000:F0}mm: 삼각형 {_simplifySrcTris:N0} → {m.TriangleCount:N0} ({pct:F1}%)";
+                    var p = _meshTask.Result;
+                    _pipeline = p;
+                    ShowPipeline(p);
                     Log(_meshStatus);
-                    if (_simplifyDir != null)
+                    if (_meshTaskDir != null)
                     {
-                        try { Log("저장: " + ScanSession.SaveSimplifiedMesh(_simplifyDir, m, _simplifyErr, _simplifySrcTris)); }
-                        catch (Exception e) { Log("mesh.obj 저장 실패: " + e.Message); }
+                        try
+                        {
+                            if (_meshTaskFull) { p.Save(_meshTaskDir); Log($"저장: {SessionMeta.MeshRawFileName}{(p.Refined != null ? ", " + SessionMeta.MeshRefinedFileName : "")}{(p.SimplifyError > 0 ? ", " + SessionMeta.MeshFileName : "")} ({_meshTaskDir})"); }
+                            else if (p.SimplifyError > 0) Log("저장: " + p.SaveSimplified(_meshTaskDir));
+                        }
+                        catch (Exception e) { Log("메쉬 저장 실패: " + e.Message); }
                     }
                 }
-                _simplify = null;
+                _meshTask = null;
             }
+        }
+
+        void ShowPipeline(MeshPipeline p)
+        {
+            var m = p.Simplified;
+            _meshView.ShowMerged(m, _meshColors);
+            var sb = new System.Text.StringBuilder();
+            if (p.Refined != null) sb.Append($"다듬기: 삼각형 {p.Raw.TriangleCount:N0} → {p.Refined.TriangleCount:N0} (정점 이동 평균 {p.Stats.MeanOffset * 1000:F1}mm)\n");
+            if (p.SimplifyError > 0)
+            {
+                double pct = p.Detailed.TriangleCount > 0 ? 100.0 * m.TriangleCount / p.Detailed.TriangleCount : 0;
+                sb.Append($"단순화 {p.SimplifyError * 1000:F0}mm: 삼각형 {p.Detailed.TriangleCount:N0} → {m.TriangleCount:N0} ({pct:F1}%)");
+            }
+            else sb.Append($"단순화 없음: 삼각형 {m.TriangleCount:N0}");
+            if (!p.HasColor) sb.Append(" · 점에 카메라 색 없음 (아이패드 앱을 새로 빌드해야 원본 모드에서도 색이 옴)");
+            _meshStatus = sb.ToString();
         }
 
         /// <summary>지금 보이는 세션의 원본 메쉬 (수신 중 세션의 블록을 합친 것, 또는 불러온 mesh_raw.obj).</summary>
@@ -165,25 +189,43 @@ namespace RackScanner.Receiver
             return _loadedMesh;
         }
 
-        /// <summary>고른 단순화 단계로 메쉬를 다시 만든다. "원본" 이면 원래 밀도로 보여 준다.</summary>
+        /// <summary>
+        /// 고른 단순화 단계로 메쉬를 다시 만든다. 다듬기 결과가 있으면 단순화만 다시 하고, 없으면 다듬기부터 (점 + 카메라 색).
+        /// 수신 중(저장 전) "원본" 은 받은 블록을 그대로 보여 준다.
+        /// </summary>
         void ApplyMeshLevel()
         {
-            var raw = CurrentRawMesh(out var dir);
-            if (raw == null || raw.TriangleCount == 0) return;
-            if (SimplifyErrors[_simplifyIdx] <= 0)
+            if (_meshTask != null) return; // 끝나면 다시 고르면 된다
+            bool receiving = _session != null && _session.MeshBlocks.Count > 0 && !_session.Saved;
+            float err = SimplifyErrors[_simplifyIdx];
+            if (receiving && err <= 0)
             {
-                if (_session != null && _session.MeshBlocks.Count > 0) _meshView.ShowBlocks(); else _meshView.ShowMerged(raw);
-                _meshStatus = $"원본: 삼각형 {raw.TriangleCount:N0}";
+                _meshView.ShowBlocks();
+                _meshStatus = $"원본 블록: 삼각형 {_session.MeshTriangleCount:N0}";
                 return;
             }
-            if (_simplify != null) return; // 끝나면 다시 고르면 된다
-            _simplifyErr = SimplifyErrors[_simplifyIdx];
-            _simplifySrcTris = raw.TriangleCount;
-            _simplifyDir = dir;
-            float err = _simplifyErr;
-            _simplify = Task.Run(() => MeshSimplifier.Simplify(raw, new SimplifyOptions { MaxError = err }));
-            _meshStatus = $"단순화 중... ({raw.TriangleCount:N0} 삼각형)";
+            _meshTaskGen = _meshGen;
+            _meshTaskDir = receiving ? null : (_session != null && _session.MeshBlocks.Count > 0 ? _session.SessionDir : _loadedDir);
+            if (_pipeline != null && _pipelineRefined == _refineMesh)
+            {
+                var p = _pipeline;
+                _meshTaskFull = false;
+                _meshTask = Task.Run(() => { p.Resimplify(err); return p; });
+                _meshStatus = $"단순화 중... ({p.Detailed.TriangleCount:N0} 삼각형)";
+                return;
+            }
+            var raw = CurrentRawMesh(out _);
+            if (raw == null || raw.TriangleCount == 0) return;
+            var pts = new List<PointXYZRGB>(_raw);
+            bool refine = _refineMesh;
+            _pipelineRefined = refine;
+            _meshTaskFull = true;
+            _meshTask = Task.Run(() => MeshPipeline.Run(raw, pts, new RefineOptions(), err, refine));
+            _meshStatus = refine ? $"점 {pts.Count:N0}개로 메쉬 다듬는 중... ({raw.TriangleCount:N0} 삼각형)" : $"색 입히고 단순화 중... ({raw.TriangleCount:N0} 삼각형)";
         }
+
+        /// <summary>원본 메쉬가 바뀌었다 (새 블록, 새 세션, 불러오기): 다듬기부터 다시 해야 한다.</summary>
+        void InvalidateMeshPipeline() { _pipeline = null; _meshGen++; }
 
         void ApplyVisibility()
         {
@@ -207,6 +249,7 @@ namespace RackScanner.Receiver
                         _spawner.Clear();
                         _result = null;
                         _meshView.Clear();
+                        InvalidateMeshPipeline();
                         _loadedMesh = null; _loadedDir = null; _meshStatus = "";
                         _session = new ScanSession(SessionsRoot, e.SessionId, e.Hello.DeviceInfo, MergeSize);
                         Log($"새 세션 {e.SessionId} ({e.Hello.DeviceInfo}) from {e.Remote}");
@@ -235,6 +278,7 @@ namespace RackScanner.Receiver
                         {
                             if (_meshView.ShowingMerged) _meshView.ShowBlocks(); // 새 블록이 오면 실시간 블록 표시로
                             _meshView.SetBlock(mb);
+                            InvalidateMeshPipeline();
                             _meshStatus = $"수신 중: 블록 {_session.MeshBlocks.Count} · 삼각형 {_session.MeshTriangleCount:N0}";
                         }
                     }
@@ -286,6 +330,7 @@ namespace RackScanner.Receiver
                 RebuildDisplay();
                 Log($"불러옴: {Path.GetFileName(dir)} ({pts.Count}점)");
                 _meshView.Clear();
+                InvalidateMeshPipeline();
                 _meshStatus = "";
                 _loadedDir = dir;
                 _loadedMesh = ScanSession.LoadMesh(dir);
@@ -387,11 +432,17 @@ namespace RackScanner.Receiver
             if (wire != _wireframe) { _wireframe = wire; _meshView.Wireframe = wire; }
             GUILayout.BeginHorizontal();
             GUILayout.Label("단순화 오차", GUILayout.Width(80));
-            GUI.enabled = _simplify == null;
+            GUI.enabled = _meshTask == null;
             int level = GUILayout.Toolbar(_simplifyIdx, SimplifyLabels);
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            bool refine = GUILayout.Toggle(_refineMesh, "점으로 다듬기");
             GUI.enabled = true;
+            bool colors = GUILayout.Toggle(_meshColors, "카메라 색");
             GUILayout.EndHorizontal();
             if (level != _simplifyIdx) { _simplifyIdx = level; ApplyMeshLevel(); }
+            if (refine != _refineMesh) { _refineMesh = refine; InvalidateMeshPipeline(); ApplyMeshLevel(); }
+            if (colors != _meshColors) { _meshColors = colors; if (_pipeline != null && _meshView.ShowingMerged) ShowPipeline(_pipeline); }
             if (_meshStatus != "") GUILayout.Label(_meshStatus, new GUIStyle(GUI.skin.label) { wordWrap = true, fontSize = 12 });
 
             GUILayout.Space(6);

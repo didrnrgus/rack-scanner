@@ -87,6 +87,7 @@ namespace RackScanner.Receiver.Session
             if (mb.IsRemoval) MeshBlocks.Remove(mb.BlockId);
             else { MeshBlocks[mb.BlockId] = mb; MeshTriangleCount += mb.TriangleCount; }
             Saved = false;
+            _meshDirty = true;
             return true;
         }
 
@@ -101,15 +102,21 @@ namespace RackScanner.Receiver.Session
             Saved = false;
         }
 
-        /// <summary>세션 폴더에 points.ply, session.json, alignment_log.csv 와 (메쉬가 있으면) mesh_raw.obj 를 쓴다.</summary>
+        bool _meshDirty;
+
+        /// <summary>
+        /// 세션 폴더에 points.ply, session.json, alignment_log.csv 와 (메쉬가 있으면) mesh_raw.obj 를 쓴다.
+        /// mesh_raw.obj 는 메쉬가 바뀌었을 때만 다시 쓴다 (수신 앱이 색을 입혀 다시 쓴 파일을, 병합 칸만 바꾼 재저장이 덮어쓰지 않게).
+        /// </summary>
         public void Save()
         {
-            if (MeshBlocks.Count > 0)
+            if (MeshBlocks.Count > 0 && _meshDirty)
             {
                 var merged = BuildMergedMesh();
                 ObjIO.Write(Path.Combine(SessionDir, SessionMeta.MeshRawFileName), merged, $"session {SessionId}, ARKit mesh blocks {MeshBlocks.Count} (original density)");
                 Meta.MeshBlockCount = MeshBlocks.Count;
                 Meta.MeshTriangleCount = merged.TriangleCount;
+                _meshDirty = false;
             }
             var pts = Points.ToPoints();
             PlyIO.Write(Path.Combine(SessionDir, SessionMeta.PointsFileName), pts);
@@ -151,15 +158,6 @@ namespace RackScanner.Receiver.Session
             list.Sort(StringComparer.Ordinal);
             list.Reverse();
             return list;
-        }
-
-        /// <summary>단순화한 메쉬를 mesh.obj 로 쓴다.</summary>
-        public static string SaveSimplifiedMesh(string sessionDir, IndexedMesh mesh, float maxError, int sourceTriangles)
-        {
-            string path = Path.Combine(sessionDir, SessionMeta.MeshFileName);
-            ObjIO.Write(path, mesh, string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "adaptive simplification (QEM), max error {0:F1} mm, triangles {1} -> {2}", maxError * 1000, sourceTriangles, mesh.TriangleCount));
-            return path;
         }
 
         /// <summary>저장된 세션의 원본 메쉬 (mesh_raw.obj). 없으면 null.</summary>

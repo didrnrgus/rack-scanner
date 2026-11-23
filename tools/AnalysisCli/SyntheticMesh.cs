@@ -50,6 +50,9 @@ namespace RackScanner.Tools
             return this;
         }
 
+        /// <summary>지금까지 만든 면을 하나로 합친다 (경계 정점 weld 안은 붙임).</summary>
+        public IndexedMesh Build(float weld = 0.001f) => IndexedMesh.Combine(_parts, weld);
+
         /// <summary>바닥 (w×d), 뒤 벽, 철제 선반 1칸×levels 층, 선반 위 상자 몇 개.</summary>
         public static IndexedMesh Room(float noise, int seed = 1)
         {

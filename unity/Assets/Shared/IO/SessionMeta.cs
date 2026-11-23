@@ -34,9 +34,11 @@ namespace RackScanner.Shared.IO
         public const string ResultFileName = "result.json";
         /// <summary>메쉬 블록 원본: MESH_BLOCK 프레임을 이어 쓴 파일 (아이패드, 블록마다 마지막 판이 유효).</summary>
         public const string MeshFramesFileName = "mesh.bin";
-        /// <summary>ARKit 메쉬 블록을 합친 원본 (OBJ, 마커 좌표).</summary>
+        /// <summary>ARKit 메쉬 블록을 합친 원본 (OBJ, 마커 좌표). 점에 카메라 색이 있으면 정점 색 포함 (모양은 ARKit 그대로).</summary>
         public const string MeshRawFileName = "mesh_raw.obj";
-        /// <summary>적응형 단순화한 메쉬 (OBJ, 마커 좌표). 넓은 면은 큰 삼각형, 복잡한 곳은 원래 밀도.</summary>
+        /// <summary>원본 메쉬를 깊이 점으로 다듬은 메쉬 (OBJ, 마커 좌표, 정점 색). 디테일 있는 곳만 촘촘해진다.</summary>
+        public const string MeshRefinedFileName = "mesh_refined.obj";
+        /// <summary>적응형 단순화한 메쉬 (OBJ, 마커 좌표, 정점 색). 넓은 면은 큰 삼각형, 복잡한 곳은 원래 밀도.</summary>
         public const string MeshFileName = "mesh.obj";
 
         public string ToJson()
